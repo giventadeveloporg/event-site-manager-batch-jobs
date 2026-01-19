@@ -1,0 +1,106 @@
+---
+description: PostgreSQL Enum Type Mapping Pattern for Batch Jobs Project
+alwaysApply: true
+---
+
+# PostgreSQL Enum Type Mapping Pattern
+
+## Overview
+
+The batch jobs project uses **VARCHAR columns with CHECK constraints** instead of PostgreSQL enum types for enum field mappings. This avoids PostgreSQL enum type casting issues and maintains compatibility with the database schema.
+
+## Pattern: Enum Field Mapping
+
+### ✅ Correct Pattern (Current Approach)
+
+When creating domain entities with enum fields, use the following pattern:
+
+```java
+@Enumerated(EnumType.STRING)
+@Column(name = "field_name", length = 50, nullable = false)
+private EnumType fieldName;
+```
+
+**Key Points:**
+- Use `@Enumerated(EnumType.STRING)` annotation
+- Map to `VARCHAR` column type (not PostgreSQL enum type)
+- Specify appropriate `length` (typically 50 for enum values)
+- Database column should be `VARCHAR` with CHECK constraint, not PostgreSQL enum type
+
+### ❌ Do NOT Use PostgreSQL Enum Types
+
+**Do NOT use this pattern:**
+```java
+@Enumerated(EnumType.STRING)
+@JdbcTypeCode(SqlTypes.OTHER)
+@Column(name = "field_name", columnDefinition = "postgresql_enum_type", nullable = false)
+private EnumType fieldName;
+```
+
+**Reason:** The batch jobs project uses VARCHAR columns, not PostgreSQL enum types. Using `@JdbcTypeCode(SqlTypes.OTHER)` with `columnDefinition` pointing to a PostgreSQL enum type will cause casting errors.
+
+## Examples from Codebase
+
+### Example 1: PromotionEmailSentLog.emailStatus
+
+**Location:** `src/main/java/com/eventmanager/batch/domain/PromotionEmailSentLog.java:54`
+
+```java
+@Enumerated(EnumType.STRING)
+@Column(name = "email_status", length = 50, nullable = false)
+private EmailStatus emailStatus;
+```
+
+**Database Schema:**
+```sql
+email_status VARCHAR(50) DEFAULT 'SENT',
+CONSTRAINT chk_email_status CHECK (email_status IN ('SENT', 'FAILED', 'BOUNCED'))
+```
+
+### Example 2: TenantEmailAddress.emailType
+
+**Location:** `src/main/java/com/eventmanager/batch/domain/TenantEmailAddress.java:35`
+
+```java
+@Enumerated(EnumType.STRING)
+@Column(name = "email_type", length = 50)
+private TenantEmailType emailType;
+```
+
+## Database Schema Pattern
+
+When creating database migrations or schema definitions:
+
+1. **Use VARCHAR instead of PostgreSQL enum types:**
+   ```sql
+   -- ✅ Correct
+   field_name VARCHAR(50) NOT NULL,
+   CONSTRAINT chk_field_name CHECK (field_name IN ('VALUE1', 'VALUE2', 'VALUE3'))
+   
+   -- ❌ Do NOT use
+   CREATE TYPE field_name_type AS ENUM ('VALUE1', 'VALUE2', 'VALUE3');
+   field_name field_name_type NOT NULL
+   ```
+
+2. **Add CHECK constraints for validation:**
+   ```sql
+   CONSTRAINT chk_field_name CHECK (field_name IN ('VALUE1', 'VALUE2', 'VALUE3'))
+   ```
+
+## When Adding New Enum Fields
+
+1. **Create the Java enum** in `src/main/java/com/eventmanager/batch/domain/enumeration/`
+2. **Map to VARCHAR column** using `@Enumerated(EnumType.STRING)` and `@Column(length = 50)`
+3. **Define database column as VARCHAR** with CHECK constraint in schema/migration files
+4. **Do NOT use** `@JdbcTypeCode(SqlTypes.OTHER)` or `columnDefinition` pointing to PostgreSQL enum types
+
+## Related Documentation
+
+- See `documentation/sync_sequence_duplicate_key_fix/postgresql_enum_type_search_prompt.html` for context on why this pattern is used
+- Database schema: `database/Latest_Schema_Post__Blob_Claude_12.sql`
+
+## Notes
+
+- The backend project (`malayalees-us-site-boot`) may use PostgreSQL enum types with `@JdbcTypeCode(SqlTypes.OTHER)` annotation
+- The batch jobs project uses VARCHAR to avoid enum type casting issues
+- This pattern ensures compatibility and avoids PostgreSQL enum type casting errors

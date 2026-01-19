@@ -187,4 +187,151 @@ public class BackendApiService {
             return false;
         }
     }
+
+    /**
+     * Fetch manual payment request details from backend API.
+     *
+     * @param paymentRequestId The payment request ID
+     * @return JsonNode containing payment request data, or null if not found
+     */
+    public JsonNode getManualPaymentRequest(Long paymentRequestId) {
+        String url = backendApiBaseUrl + "/api/manual-payments/" + paymentRequestId;
+        String jwtToken = getJwtToken();
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(jwtToken);
+
+            HttpEntity<Void> request = new HttpEntity<>(headers);
+
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                request,
+                JsonNode.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                log.debug("Successfully fetched manual payment request {}", paymentRequestId);
+                return response.getBody();
+            } else {
+                log.warn("Unexpected status code when fetching manual payment request {}: {}",
+                    paymentRequestId, response.getStatusCode());
+                return null;
+            }
+        } catch (HttpClientErrorException.Unauthorized e) {
+            log.warn("JWT token expired, clearing cache and retrying");
+            cachedJwtToken = null;
+            jwtTokenExpiry = null;
+            return getManualPaymentRequest(paymentRequestId);
+        } catch (HttpClientErrorException.NotFound e) {
+            log.warn("Manual payment request {} not found in backend: {}", paymentRequestId, e.getResponseBodyAsString());
+            return null;
+        } catch (HttpClientErrorException | HttpServerErrorException e) {
+            log.error("HTTP error fetching manual payment request {}: {} - {}",
+                paymentRequestId, e.getStatusCode(), e.getResponseBodyAsString());
+            return null;
+        } catch (Exception e) {
+            log.error("Error fetching manual payment request {}: {}", paymentRequestId, e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Fetch event details from backend API.
+     *
+     * @param eventId The event ID
+     * @return JsonNode containing event data, or null if not found
+     */
+    public JsonNode getEventDetails(Long eventId) {
+        String url = backendApiBaseUrl + "/api/event-details/" + eventId;
+        String jwtToken = getJwtToken();
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(jwtToken);
+
+            HttpEntity<Void> request = new HttpEntity<>(headers);
+
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                request,
+                JsonNode.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                log.debug("Successfully fetched event details {}", eventId);
+                return response.getBody();
+            } else {
+                log.warn("Unexpected status code when fetching event details {}: {}",
+                    eventId, response.getStatusCode());
+                return null;
+            }
+        } catch (HttpClientErrorException.Unauthorized e) {
+            log.warn("JWT token expired, clearing cache and retrying");
+            cachedJwtToken = null;
+            jwtTokenExpiry = null;
+            return getEventDetails(eventId);
+        } catch (HttpClientErrorException.NotFound e) {
+            log.warn("Event details {} not found in backend: {}", eventId, e.getResponseBodyAsString());
+            return null;
+        } catch (HttpClientErrorException | HttpServerErrorException e) {
+            log.error("HTTP error fetching event details {}: {} - {}",
+                eventId, e.getStatusCode(), e.getResponseBodyAsString());
+            return null;
+        } catch (Exception e) {
+            log.error("Error fetching event details {}: {}", eventId, e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Fetch event ticket transaction details from backend API.
+     *
+     * @param transactionId The transaction ID
+     * @return JsonNode containing transaction data, or null if not found
+     */
+    public JsonNode getEventTicketTransaction(Long transactionId) {
+        String url = backendApiBaseUrl + "/api/event-ticket-transactions/" + transactionId;
+        String jwtToken = getJwtToken();
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(jwtToken);
+
+            HttpEntity<Void> request = new HttpEntity<>(headers);
+
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                request,
+                JsonNode.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                log.debug("Successfully fetched event ticket transaction {}", transactionId);
+                return response.getBody();
+            } else {
+                log.warn("Unexpected status code when fetching event ticket transaction {}: {}",
+                    transactionId, response.getStatusCode());
+                return null;
+            }
+        } catch (HttpClientErrorException.Unauthorized e) {
+            log.warn("JWT token expired, clearing cache and retrying");
+            cachedJwtToken = null;
+            jwtTokenExpiry = null;
+            return getEventTicketTransaction(transactionId);
+        } catch (HttpClientErrorException.NotFound e) {
+            log.warn("Event ticket transaction {} not found in backend: {}", transactionId, e.getResponseBodyAsString());
+            return null;
+        } catch (HttpClientErrorException | HttpServerErrorException e) {
+            log.error("HTTP error fetching event ticket transaction {}: {} - {}",
+                transactionId, e.getStatusCode(), e.getResponseBodyAsString());
+            return null;
+        } catch (Exception e) {
+            log.error("Error fetching event ticket transaction {}: {}", transactionId, e.getMessage(), e);
+            return null;
+        }
+    }
 }

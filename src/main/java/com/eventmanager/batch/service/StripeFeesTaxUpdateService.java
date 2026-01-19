@@ -105,6 +105,10 @@ public class StripeFeesTaxUpdateService {
         // Process each tenant sequentially
         for (String currentTenantId : tenantsToProcess) {
             log.info("Processing tenant: {}, eventId: {}", currentTenantId, eventId);
+            
+            // Log diagnostic information before processing
+            logDiagnosticInfo(currentTenantId, eventId, startDate, endDate, forceUpdate);
+            
             TenantStats tenantStats = processTenantTransactions(
                 currentTenantId,
                 eventId,
@@ -300,6 +304,67 @@ public class StripeFeesTaxUpdateService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Delay interrupted");
+        }
+    }
+
+    /**
+     * Log diagnostic information to help identify why no records are selected.
+     * Checks each condition of the query separately.
+     * 
+     * The query requires:
+     * 1. tenant_id = :tenantId
+     * 2. event_id = :eventId (if provided)
+     * 3. stripe_fee_amount IS NULL OR stripe_fee_amount = 0 OR forceUpdate = true
+     * 4. stripe_payment_intent_id IS NOT NULL
+     * 5. status = 'COMPLETED'
+     * 6. purchase_date between startDate and endDate
+     */
+    private void logDiagnosticInfo(
+        String tenantId,
+        Long eventId,
+        ZonedDateTime startDate,
+        ZonedDateTime endDate,
+        boolean forceUpdate
+    ) {
+        try {
+            java.sql.Timestamp startTimestamp = java.sql.Timestamp.from(startDate.toInstant());
+            java.sql.Timestamp endTimestamp = java.sql.Timestamp.from(endDate.toInstant());
+
+            // Count transactions needing update (matching all conditions)
+            Long needingUpdate = transactionRepository.countTransactionsNeedingUpdate(
+                tenantId, eventId, forceUpdate, startTimestamp, endTimestamp
+            );
+            log.info("Diagnostic: Transactions matching all conditions (needing update): {}", needingUpdate);
+
+            // If no records found, check each condition separately
+            if (needingUpdate == 0) {
+                log.warn("No transactions found matching all conditions. Checking individual conditions...");
+                
+                // Count with forceUpdate=true to see total matching other conditions
+                Long totalMatchingOtherConditions = transactionRepository.countTransactionsNeedingUpdate(
+                    tenantId, eventId, true, startTimestamp, endTimestamp
+                );
+                log.info("Diagnostic: Transactions matching conditions (with forceUpdate=true): {}", totalMatchingOtherConditions);
+                
+                if (totalMatchingOtherConditions == 0) {
+                    log.warn("Diagnostic: No transactions found even with forceUpdate=true. " +
+                        "This suggests one of these conditions is failing:");
+                    log.warn("  - tenant_id = '{}'", tenantId);
+                    if (eventId != null) {
+                        log.warn("  - event_id = {}", eventId);
+                    }
+                    log.warn("  - stripe_payment_intent_id IS NOT NULL");
+                    log.warn("  - status = 'COMPLETED'");
+                    log.warn("  - purchase_date between {} and {}", startDate, endDate);
+                } else {
+                    log.info("Diagnostic: Found {} transactions with forceUpdate=true, but 0 with forceUpdate=false. " +
+                        "This suggests all transactions already have stripe_fee_amount populated (not NULL and > 0).",
+                        totalMatchingOtherConditions);
+                }
+            }
+
+        } catch (Exception e) {
+            log.warn("Failed to run diagnostic queries: {}", e.getMessage(), e);
         }
     }
 

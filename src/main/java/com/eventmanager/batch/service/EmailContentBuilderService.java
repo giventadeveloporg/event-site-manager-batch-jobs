@@ -3,6 +3,8 @@ package com.eventmanager.batch.service;
 import com.eventmanager.batch.domain.PromotionEmailTemplate;
 import com.eventmanager.batch.domain.TenantSettings;
 import com.eventmanager.batch.dto.ContactFormEmailJobRequest;
+import com.eventmanager.batch.dto.ManualPaymentConfirmationEmailJobRequest;
+import com.eventmanager.batch.dto.ManualPaymentTicketEmailJobRequest;
 import com.eventmanager.batch.repository.TenantSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -452,6 +454,307 @@ public class EmailContentBuilderService {
             // Return false but don't block processing - let it proceed and handle errors gracefully
             return false;
         }
+    }
+
+    /**
+     * Build HTML body for manual payment confirmation email.
+     * Includes payment request details, ticket summary, and payment instructions.
+     */
+    public String buildManualPaymentConfirmationEmailBody(ManualPaymentConfirmationEmailJobRequest request) {
+        String tenantId = request.getTenantId();
+
+        StringBuilder fullHtml = new StringBuilder();
+        fullHtml.append("<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>");
+
+        // Header image
+        String headerImageUrl = getTenantEmailHeaderImageUrl(tenantId);
+        if (headerImageUrl != null && !headerImageUrl.isEmpty()) {
+            fullHtml.append("<div style='text-align: center; margin-bottom: 20px;'>")
+                .append("<img src='")
+                .append(headerImageUrl)
+                .append("' alt='Header' style='max-width: 100%; height: auto;' />")
+                .append("</div>");
+        }
+
+        // Body content
+        fullHtml.append("<div style='max-width: 600px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>");
+
+        fullHtml.append("<h1 style='color: #8b7d6b;'>Payment Request Received</h1>");
+
+        fullHtml.append("<p>Dear ").append(escapeHtml(request.getRecipientName())).append(",</p>");
+
+        fullHtml.append("<p>Thank you for your interest in <strong>")
+            .append(escapeHtml(request.getEventTitle()))
+            .append("</strong>");
+        if (request.getEventDate() != null && !request.getEventDate().isEmpty()) {
+            fullHtml.append(" on ").append(escapeHtml(request.getEventDate()));
+        }
+        if (request.getEventTime() != null && !request.getEventTime().isEmpty()) {
+            fullHtml.append(" at ").append(escapeHtml(request.getEventTime()));
+        }
+        fullHtml.append(". We have received your payment request and it is currently pending confirmation.</p>");
+
+        // Payment Request Details
+        fullHtml.append("<h2 style='color: #1f4c8f;'>Payment Request Details</h2>");
+        fullHtml.append("<table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>");
+        if (request.getTransactionReference() != null && !request.getTransactionReference().isEmpty()) {
+            fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Transaction Reference:</strong></td>")
+                .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                .append(escapeHtml(request.getTransactionReference()))
+                .append("</td></tr>");
+        }
+        fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Payment Method:</strong></td>")
+            .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+            .append(escapeHtml(request.getPaymentMethod()))
+            .append("</td></tr>");
+        fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Total Amount:</strong></td>")
+            .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>$")
+            .append(escapeHtml(request.getAmount().toString()))
+            .append("</td></tr>");
+        fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Status:</strong></td>")
+            .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'><span style='color: #d97706;'>Pending Confirmation</span></td></tr>");
+        fullHtml.append("</table>");
+
+        // Ticket Summary
+        if (request.getTicketSummary() != null && !request.getTicketSummary().isEmpty()) {
+            fullHtml.append("<h2 style='color: #1f4c8f;'>Ticket Summary</h2>");
+            fullHtml.append("<table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>");
+            fullHtml.append("<thead><tr style='background-color: #f8f9fa;'>")
+                .append("<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Ticket Type</th>")
+                .append("<th style='padding: 10px; text-align: center; border-bottom: 2px solid #ddd;'>Quantity</th>")
+                .append("<th style='padding: 10px; text-align: right; border-bottom: 2px solid #ddd;'>Price</th>")
+                .append("<th style='padding: 10px; text-align: right; border-bottom: 2px solid #ddd;'>Total</th>")
+                .append("</tr></thead><tbody>");
+
+            for (ManualPaymentConfirmationEmailJobRequest.TicketSummaryItem item : request.getTicketSummary()) {
+                fullHtml.append("<tr>")
+                    .append("<td style='padding: 10px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(item.getTicketTypeName()))
+                    .append("</td>")
+                    .append("<td style='padding: 10px; text-align: center; border-bottom: 1px solid #ddd;'>")
+                    .append(item.getQuantity())
+                    .append("</td>")
+                    .append("<td style='padding: 10px; text-align: right; border-bottom: 1px solid #ddd;'>$")
+                    .append(escapeHtml(item.getPricePerUnit().toString()))
+                    .append("</td>")
+                    .append("<td style='padding: 10px; text-align: right; border-bottom: 1px solid #ddd;'>$")
+                    .append(escapeHtml(item.getTotalAmount().toString()))
+                    .append("</td>")
+                    .append("</tr>");
+            }
+
+            fullHtml.append("<tr style='font-weight: bold;'>")
+                .append("<td colspan='3' style='padding: 10px; text-align: right; border-top: 2px solid #ddd;'>Total:</td>")
+                .append("<td style='padding: 10px; text-align: right; border-top: 2px solid #ddd;'>$")
+                .append(escapeHtml(request.getAmount().toString()))
+                .append("</td>")
+                .append("</tr>");
+            fullHtml.append("</tbody></table>");
+        }
+
+        // Payment Instructions
+        if (request.getPaymentHandle() != null || request.getPaymentInstructions() != null) {
+            fullHtml.append("<h2 style='color: #1f4c8f;'>Payment Instructions</h2>");
+            fullHtml.append("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;'>");
+            fullHtml.append("<p><strong>Please send payment via ").append(escapeHtml(request.getPaymentMethod())).append(":</strong></p>");
+            fullHtml.append("<ul>");
+            if (request.getPaymentHandle() != null && !request.getPaymentHandle().isEmpty()) {
+                fullHtml.append("<li><strong>Recipient:</strong> ").append(escapeHtml(request.getPaymentHandle())).append("</li>");
+            }
+            fullHtml.append("<li><strong>Amount:</strong> $").append(escapeHtml(request.getAmount().toString())).append("</li>");
+            if (request.getPaymentInstructions() != null && !request.getPaymentInstructions().isEmpty()) {
+                fullHtml.append("<li><strong>Memo/Note:</strong> ").append(escapeHtml(request.getPaymentInstructions())).append("</li>");
+            }
+            fullHtml.append("</ul>");
+            fullHtml.append("</div>");
+        }
+
+        // Next Steps
+        fullHtml.append("<h2 style='color: #1f4c8f;'>Next Steps</h2>");
+        fullHtml.append("<p>Once you complete your payment, our team will verify the receipt and confirm your tickets. ")
+            .append("You will receive a separate email with your tickets and QR code once payment is confirmed.</p>");
+
+        fullHtml.append("<p><strong>Important:</strong> This is a payment request only. Your tickets will be issued after payment confirmation.</p>");
+
+        fullHtml.append("<hr style='border: none; border-top: 1px solid #ddd; margin: 30px 0;' />");
+
+        fullHtml.append("<p style='font-size: 0.9em; color: #666;'>")
+            .append("If you have any questions, please contact us at [support email].<br/>")
+            .append("Event: <a href='#'>").append(escapeHtml(request.getEventTitle())).append("</a>")
+            .append("</p>");
+
+        fullHtml.append("</div>");
+
+        // Footer HTML
+        String footerHtml = getTenantEmailFooterHtml(tenantId);
+        if (footerHtml != null && !footerHtml.isEmpty()) {
+            fullHtml.append("<div>").append(footerHtml).append("</div>");
+        }
+
+        fullHtml.append("</body></html>");
+        return fullHtml.toString();
+    }
+
+    /**
+     * Build HTML body for manual payment ticket email.
+     * Includes QR code, ticket details, and event information.
+     */
+    public String buildManualPaymentTicketEmailBody(ManualPaymentTicketEmailJobRequest request) {
+        String tenantId = request.getTenantId();
+
+        StringBuilder fullHtml = new StringBuilder();
+        fullHtml.append("<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>");
+
+        // Header image
+        String headerImageUrl = getTenantEmailHeaderImageUrl(tenantId);
+        if (headerImageUrl != null && !headerImageUrl.isEmpty()) {
+            fullHtml.append("<div style='text-align: center; margin-bottom: 20px;'>")
+                .append("<img src='")
+                .append(headerImageUrl)
+                .append("' alt='Header' style='max-width: 100%; height: auto;' />")
+                .append("</div>");
+        }
+
+        // Body content
+        fullHtml.append("<div style='max-width: 600px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>");
+
+        fullHtml.append("<h1 style='color: #8b7d6b;'>Your Tickets</h1>");
+
+        fullHtml.append("<p>Dear ").append(escapeHtml(request.getRecipientName())).append(",</p>");
+
+        fullHtml.append("<p><strong>Your payment has been confirmed! Your tickets are ready.</strong></p>");
+
+        fullHtml.append("<p>Thank you for your purchase for <strong>")
+            .append(escapeHtml(request.getEventTitle()))
+            .append("</strong>");
+        if (request.getEventDate() != null && !request.getEventDate().isEmpty()) {
+            fullHtml.append(" on ").append(escapeHtml(request.getEventDate()));
+        }
+        if (request.getEventTime() != null && !request.getEventTime().isEmpty()) {
+            fullHtml.append(" at ").append(escapeHtml(request.getEventTime()));
+        }
+        fullHtml.append(".</p>");
+
+        // QR Code Display
+        if (request.getQrCodeImageUrl() != null && !request.getQrCodeImageUrl().isEmpty()) {
+            fullHtml.append("<div style='text-align: center; margin: 30px 0;'>");
+            fullHtml.append("<img src='")
+                .append(escapeHtml(request.getQrCodeImageUrl()))
+                .append("' alt='QR Code for ")
+                .append(escapeHtml(request.getEventTitle()))
+                .append(" - ")
+                .append(escapeHtml(request.getTransactionReference()))
+                .append("' style='max-width: 300px; height: auto; border: 2px solid #ddd; padding: 10px; background-color: #fff;' />");
+            fullHtml.append("<p style='margin-top: 10px; font-weight: bold;'>Present this QR code at the event for entry</p>");
+            fullHtml.append("</div>");
+        }
+
+        // Ticket Details
+        fullHtml.append("<h2 style='color: #1f4c8f;'>Ticket Details</h2>");
+        fullHtml.append("<table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>");
+        if (request.getTransactionReference() != null && !request.getTransactionReference().isEmpty()) {
+            fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Transaction Reference:</strong></td>")
+                .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                .append(escapeHtml(request.getTransactionReference()))
+                .append("</td></tr>");
+        }
+        fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Payment Status:</strong></td>")
+            .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'><span style='color: #059669; font-weight: bold;'>Confirmed</span></td></tr>");
+        fullHtml.append("</table>");
+
+        // Ticket Items
+        if (request.getTicketItems() != null && !request.getTicketItems().isEmpty()) {
+            fullHtml.append("<h2 style='color: #1f4c8f;'>Ticket Summary</h2>");
+            fullHtml.append("<table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>");
+            fullHtml.append("<thead><tr style='background-color: #f8f9fa;'>")
+                .append("<th style='padding: 10px; text-align: left; border-bottom: 2px solid #ddd;'>Ticket Type</th>")
+                .append("<th style='padding: 10px; text-align: center; border-bottom: 2px solid #ddd;'>Quantity</th>")
+                .append("<th style='padding: 10px; text-align: right; border-bottom: 2px solid #ddd;'>Price</th>")
+                .append("<th style='padding: 10px; text-align: right; border-bottom: 2px solid #ddd;'>Total</th>")
+                .append("</tr></thead><tbody>");
+
+            for (ManualPaymentTicketEmailJobRequest.TicketItem item : request.getTicketItems()) {
+                fullHtml.append("<tr>")
+                    .append("<td style='padding: 10px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(item.getTicketTypeName()))
+                    .append("</td>")
+                    .append("<td style='padding: 10px; text-align: center; border-bottom: 1px solid #ddd;'>")
+                    .append(item.getQuantity())
+                    .append("</td>")
+                    .append("<td style='padding: 10px; text-align: right; border-bottom: 1px solid #ddd;'>$")
+                    .append(escapeHtml(item.getPricePerUnit().toString()))
+                    .append("</td>")
+                    .append("<td style='padding: 10px; text-align: right; border-bottom: 1px solid #ddd;'>$")
+                    .append(escapeHtml(item.getTotalAmount().toString()))
+                    .append("</td>")
+                    .append("</tr>");
+            }
+
+            fullHtml.append("<tr style='font-weight: bold;'>")
+                .append("<td colspan='3' style='padding: 10px; text-align: right; border-top: 2px solid #ddd;'>Total:</td>")
+                .append("<td style='padding: 10px; text-align: right; border-top: 2px solid #ddd;'>$")
+                .append(escapeHtml(request.getTotalAmount().toString()))
+                .append("</td>")
+                .append("</tr>");
+            fullHtml.append("</tbody></table>");
+        }
+
+        // Event Information
+        if (request.getEventLocation() != null || request.getEventAddress() != null) {
+            fullHtml.append("<h2 style='color: #1f4c8f;'>Event Information</h2>");
+            fullHtml.append("<table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>");
+            if (request.getEventDate() != null && !request.getEventDate().isEmpty()) {
+                fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Date:</strong></td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(request.getEventDate()))
+                    .append("</td></tr>");
+            }
+            if (request.getEventTime() != null && !request.getEventTime().isEmpty()) {
+                fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Time:</strong></td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(request.getEventTime()))
+                    .append("</td></tr>");
+            }
+            if (request.getEventLocation() != null && !request.getEventLocation().isEmpty()) {
+                fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Location:</strong></td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(request.getEventLocation()))
+                    .append("</td></tr>");
+            }
+            if (request.getEventAddress() != null && !request.getEventAddress().isEmpty()) {
+                fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Address:</strong></td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(request.getEventAddress()))
+                    .append("</td></tr>");
+            }
+            fullHtml.append("</table>");
+        }
+
+        // Important Instructions
+        fullHtml.append("<h2 style='color: #1f4c8f;'>Important Instructions</h2>");
+        fullHtml.append("<ul>");
+        fullHtml.append("<li>Please bring this QR code to the event.</li>");
+        fullHtml.append("<li>Each attendee must have their own QR code (if multiple tickets).</li>");
+        fullHtml.append("<li>QR code is valid for entry only.</li>");
+        fullHtml.append("</ul>");
+
+        fullHtml.append("<hr style='border: none; border-top: 1px solid #ddd; margin: 30px 0;' />");
+
+        fullHtml.append("<p style='font-size: 0.9em; color: #666;'>")
+            .append("Event organizer contact information<br/>")
+            .append("Event: <a href='#'>").append(escapeHtml(request.getEventTitle())).append("</a>")
+            .append("</p>");
+
+        fullHtml.append("</div>");
+
+        // Footer HTML
+        String footerHtml = getTenantEmailFooterHtml(tenantId);
+        if (footerHtml != null && !footerHtml.isEmpty()) {
+            fullHtml.append("<div>").append(footerHtml).append("</div>");
+        }
+
+        fullHtml.append("</body></html>");
+        return fullHtml.toString();
     }
 }
 

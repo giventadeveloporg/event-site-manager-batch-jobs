@@ -56,6 +56,9 @@ public class ManualPaymentSummaryJobService {
                 .addValue("tenantId", tenantId)
                 .addValue("eventId", eventId);
 
+            // Diagnostic queries to identify why no records are selected
+            logDiagnosticInfo(params);
+
             int deleted = jdbcTemplate.update(
                 "DELETE FROM manual_payment_summary_report " +
                     "WHERE snapshot_date = :snapshotDate " +
@@ -78,6 +81,12 @@ public class ManualPaymentSummaryJobService {
                     "GROUP BY r.tenant_id, r.event_id, r.payment_method_type, r.status",
                 params
             );
+
+            // Log diagnostic info if no records were inserted
+            if (inserted == 0) {
+                log.warn("No records inserted. Running diagnostic queries to identify the issue...");
+                logDiagnosticInfo(params);
+            }
 
             stats.deletedRows = deleted;
             stats.insertedRows = inserted;
@@ -109,6 +118,109 @@ public class ManualPaymentSummaryJobService {
             );
 
             throw e;
+        }
+    }
+
+    /**
+     * Log diagnostic information to help identify why no records are selected.
+     * Checks:
+     * 1. Total manual_payment_request records
+     * 2. Records with event_id IS NOT NULL
+     * 3. Records matching tenantId filter (if provided)
+     * 4. Records matching eventId filter (if provided)
+     * 5. Records where event has manual_payment_enabled = true
+     * 6. Records matching all conditions
+     */
+    private void logDiagnosticInfo(MapSqlParameterSource params) {
+        try {
+            // Count total manual payment requests
+            Long totalRequests = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM manual_payment_request",
+                new MapSqlParameterSource(),
+                Long.class
+            );
+            log.info("Diagnostic: Total manual_payment_request records: {}", totalRequests);
+
+            // Count records with event_id IS NOT NULL
+            Long withEventId = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM manual_payment_request WHERE event_id IS NOT NULL",
+                new MapSqlParameterSource(),
+                Long.class
+            );
+            log.info("Diagnostic: Records with event_id IS NOT NULL: {}", withEventId);
+
+            // Count records matching tenantId filter (if provided)
+            if (params.getValue("tenantId") != null) {
+                Long matchingTenant = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM manual_payment_request WHERE tenant_id = :tenantId",
+                    params,
+                    Long.class
+                );
+                log.info("Diagnostic: Records matching tenantId '{}': {}", params.getValue("tenantId"), matchingTenant);
+            }
+
+            // Count records matching eventId filter (if provided)
+            if (params.getValue("eventId") != null) {
+                Long matchingEvent = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM manual_payment_request WHERE event_id = :eventId",
+                    params,
+                    Long.class
+                );
+                log.info("Diagnostic: Records matching eventId {}: {}", params.getValue("eventId"), matchingEvent);
+            }
+
+            // Count records where event has manual_payment_enabled = true
+            Long withEnabledEvent = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM manual_payment_request r " +
+                    "JOIN event_details e ON e.id = r.event_id " +
+                    "WHERE r.event_id IS NOT NULL AND e.manual_payment_enabled = true",
+                new MapSqlParameterSource(),
+                Long.class
+            );
+            log.info("Diagnostic: Records with event_id IS NOT NULL AND event.manual_payment_enabled = true: {}", withEnabledEvent);
+
+            // Count records matching all conditions (without GROUP BY)
+            String countQuery = "SELECT COUNT(*) FROM manual_payment_request r " +
+                "JOIN event_details e ON e.id = r.event_id " +
+                "WHERE r.event_id IS NOT NULL " +
+                "  AND e.manual_payment_enabled = true " +
+                "  AND (:tenantId IS NULL OR r.tenant_id = :tenantId) " +
+                "  AND (:eventId IS NULL OR r.event_id = :eventId)";
+            
+            Long matchingAllConditions = jdbcTemplate.queryForObject(
+                countQuery,
+                params,
+                Long.class
+            );
+            log.info("Diagnostic: Records matching all conditions (before GROUP BY): {}", matchingAllConditions);
+
+            // If matching all conditions but tenantId filter might be excluding records
+            if (params.getValue("tenantId") != null && matchingAllConditions == 0) {
+                // Check if there are records for other tenants
+                Long otherTenants = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM manual_payment_request r " +
+                        "JOIN event_details e ON e.id = r.event_id " +
+                        "WHERE r.event_id IS NOT NULL " +
+                        "  AND e.manual_payment_enabled = true " +
+                        "  AND r.tenant_id != :tenantId",
+                    params,
+                    Long.class
+                );
+                log.info("Diagnostic: Records for other tenants (with manual_payment_enabled = true): {}", otherTenants);
+            }
+
+            // Check specific events that have manual payment requests but manual_payment_enabled might be false
+            if (params.getValue("eventId") != null) {
+                Boolean eventEnabled = jdbcTemplate.queryForObject(
+                    "SELECT manual_payment_enabled FROM event_details WHERE id = :eventId",
+                    params,
+                    Boolean.class
+                );
+                log.info("Diagnostic: Event {} has manual_payment_enabled = {}", params.getValue("eventId"), eventEnabled);
+            }
+
+        } catch (Exception e) {
+            log.warn("Failed to run diagnostic queries: {}", e.getMessage(), e);
         }
     }
 

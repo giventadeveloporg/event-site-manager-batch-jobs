@@ -1,0 +1,320 @@
+---
+description: Duplicate Key Error Prevention Pattern - Entity ID Clearing and Sequence Synchronization
+alwaysApply: true
+---
+
+# Duplicate Key Error Prevention Pattern
+
+## Overview
+
+This rule defines the pattern for preventing PostgreSQL duplicate key constraint violations when creating new entities. The pattern ensures entities always use the sequence generator instead of explicit IDs, preventing conflicts with existing data.
+
+## Root Cause
+
+Duplicate key errors occur when:
+1. Entity has an ID set before save (from DTO via MapStruct)
+2. Hibernate uses INSERT with explicit ID instead of sequence generation
+3. Database rejects INSERT because ID already exists
+
+## Pattern: Service-Level ID Clearing (Primary Prevention)
+
+### ✅ Correct Pattern
+
+When implementing `save()` methods in service implementations for creating new entities, **always clear the entity ID** to force sequence generation:
+
+```java
+@Override
+@CacheEvict(value = "entityCache", allEntries = true)
+public EntityDTO save(EntityDTO entityDTO) {
+    log.debug("Request to save Entity : {}", entityDTO);
+    Entity entity = entityMapper.toEntity(entityDTO);
+
+    // Ensure ID is null for new entities to force sequence generation
+    // This prevents duplicate key errors when entity has ID set from DTO
+    if (entity.getId() != null) {
+        log.warn(
+            "Entity {} has ID {} set during create operation. Clearing ID to force sequence generation.",
+            entity.getClass().getSimpleName(),
+            entity.getId()
+        );
+        entity.setId(null);
+    }
+
+    entity = entityRepository.save(entity);
+    return entityMapper.toDto(entity);
+}
+```
+
+**Key Points:**
+- Check if `entity.getId() != null` before save
+- Clear ID if present: `entity.setId(null)`
+- Log warning for debugging
+- This forces Hibernate to use sequence generator
+
+### ❌ Do NOT Skip ID Clearing
+
+**Do NOT use this pattern:**
+```java
+@Override
+public EntityDTO save(EntityDTO entityDTO) {
+    Entity entity = entityMapper.toEntity(entityDTO);
+    // Missing ID check - entity might have ID set!
+    entity = entityRepository.save(entity);
+    return entityMapper.toDto(entity);
+}
+```
+
+**Reason:** MapStruct automatically maps all fields including ID. If DTO has ID (even if controller checks), entity will have ID set, causing Hibernate to use INSERT with explicit ID.
+
+## Pattern: AOP Aspect (Secondary Protection)
+
+### Existing Implementation
+
+The `SequenceSynchronizationAspect` provides automatic runtime protection:
+
+**Location:** `src/main/java/com/nextjstemplate/aop/sequence/SequenceSynchronizationAspect.java`
+
+**Features:**
+- ✅ Catches `DataIntegrityViolationException` and `ConstraintViolationException`
+- ✅ Detects duplicate key violations on primary keys
+- ✅ Synchronizes sequence automatically
+- ✅ Clears entity ID before retry
+- ✅ Retries save operation once
+
+**Pointcut:**
+```java
+@Around("repositorySavePointcut() && repositoryPointcut()")
+public Object handleDuplicateKeyViolation(ProceedingJoinPoint joinPoint)
+```
+
+**This aspect is already implemented and configured.** Service-level ID clearing is still required as primary prevention.
+
+## When to Apply This Pattern
+
+### ✅ Always Apply For:
+
+1. **Create Operations** (`save()` method for new entities)
+   - When DTO has no ID (should be null)
+   - When creating new records
+   - When entity should use sequence generator
+
+2. **All Entity Services**
+   - `EventTicketTypeServiceImpl.save()`
+   - `EventDetailsServiceImpl.save()`
+   - `ManualPaymentRequestServiceImpl.save()`
+   - Any service that creates new entities
+
+### ❌ Do NOT Apply For:
+
+1. **Update Operations** (`update()` or `partialUpdate()` methods)
+   - Entity should have ID for updates
+   - ID is required to identify existing record
+
+2. **Entities Without Sequence Generator**
+   - Entities using different ID generation strategies
+   - Entities with composite keys
+
+## Examples from Codebase
+
+### Example 1: EventTicketTypeServiceImpl.save()
+
+**Location:** `src/main/java/com/nextjstemplate/service/impl/EventTicketTypeServiceImpl.java:38`
+
+```java
+@Override
+@CacheEvict(value = "eventTicketTypes", allEntries = true)
+public EventTicketTypeDTO save(EventTicketTypeDTO eventTicketTypeDTO) {
+    log.debug("Request to save EventTicketType : {}", eventTicketTypeDTO);
+    EventTicketType eventTicketType = eventTicketTypeMapper.toEntity(eventTicketTypeDTO);
+
+    // Ensure ID is null for new entities to force sequence generation
+    if (eventTicketType.getId() != null) {
+        log.warn("Entity has ID set during create. Clearing ID to force sequence generation.");
+        eventTicketType.setId(null);
+    }
+
+    eventTicketType = eventTicketTypeRepository.save(eventTicketType);
+    return eventTicketTypeMapper.toDto(eventTicketType);
+}
+```
+
+### Example 2: ManualPaymentRequestServiceImpl.createManualPaymentRequestWithTickets()
+
+**Location:** `src/main/java/com/nextjstemplate/service/impl/ManualPaymentRequestServiceImpl.java`
+
+```java
+// Entity is created fresh, ID should be null
+ManualPaymentRequest paymentRequest = new ManualPaymentRequest();
+// ... set fields ...
+// ID is null by default, sequence will generate it
+paymentRequest = manualPaymentRequestRepository.save(paymentRequest);
+```
+
+## Why This Pattern Works
+
+### Problem Flow (Without Fix):
+```
+1. DTO received (might have id=4 from frontend bug or previous state)
+2. Controller checks: if (dto.getId() != null) throw error
+3. MapStruct mapper: toEntity(dto) → copies id=4 to entity
+4. Service: repository.save(entity) → entity has id=4
+5. Hibernate: Sees ID is set → Uses INSERT INTO ... VALUES (..., 4)
+6. Database: ERROR: Key (id)=(4) already exists
+```
+
+### Solution Flow (With Fix):
+```
+1. DTO received (might have id=4)
+2. Controller checks: if (dto.getId() != null) throw error
+3. MapStruct mapper: toEntity(dto) → copies id=4 to entity
+4. Service: Checks if entity.getId() != null → YES
+5. Service: entity.setId(null) → Clears ID
+6. Service: repository.save(entity) → entity has id=null
+7. Hibernate: Sees ID is null → Uses sequence generator
+8. Database: INSERT succeeds with new sequence value
+```
+
+## Related Patterns
+
+### Pattern: Sequence Synchronization
+
+The `SequenceSynchronizationAspect` handles cases where sequence gets out of sync:
+
+**When It Triggers:**
+- Duplicate key violation detected
+- Sequence value is lower than existing IDs
+- Manual inserts bypassed sequence
+
+**What It Does:**
+1. Catches duplicate key exception
+2. Synchronizes sequence to max ID + increment
+3. Clears entity ID
+4. Retries save operation
+
+**This is automatic** - no code changes needed in services.
+
+### Pattern: SQL Sequence Synchronization
+
+**Location:** `src/main/resources/sqls/sync_sequence_after_inserts.sql`
+
+**When to Use:**
+- After manual INSERT statements
+- After bulk data imports
+- After database migrations
+
+**How to Use:**
+```bash
+# Run after manual inserts
+psql -d database_name -f src/main/resources/sqls/sync_sequence_after_inserts.sql
+```
+
+## Best Practices
+
+### 1. Always Clear ID in Create Operations
+
+```java
+// ✅ CORRECT
+if (entity.getId() != null) {
+    entity.setId(null);
+}
+entity = repository.save(entity);
+```
+
+### 2. Log Warnings for Debugging
+
+```java
+// ✅ CORRECT
+if (entity.getId() != null) {
+    log.warn("Entity {} has ID {} set during create. Clearing ID.",
+        entity.getClass().getSimpleName(), entity.getId());
+    entity.setId(null);
+}
+```
+
+### 3. Don't Clear ID in Update Operations
+
+```java
+// ✅ CORRECT for updates
+@Override
+public EntityDTO update(EntityDTO entityDTO) {
+    Entity entity = mapper.toEntity(entityDTO);
+    // ID should be set for updates - don't clear it!
+    entity = repository.save(entity);
+    return mapper.toDto(entity);
+}
+```
+
+### 4. Verify Controller Checks
+
+```java
+// ✅ CORRECT in controller
+@PostMapping("/entities")
+public ResponseEntity<EntityDTO> createEntity(@Valid @RequestBody EntityDTO entityDTO) {
+    if (entityDTO.getId() != null) {
+        throw new BadRequestAlertException("A new entity cannot already have an ID", ENTITY_NAME, "idexists");
+    }
+    // ... rest of code
+}
+```
+
+**Note:** Controller check is good, but service-level clearing provides defense-in-depth.
+
+## Testing
+
+### Test Case: Entity with ID Set
+
+```java
+@Test
+void testSaveWithIdSet() {
+    EntityDTO dto = new EntityDTO();
+    dto.setId(999L); // ID is set
+
+    EntityDTO result = entityService.save(dto);
+
+    // Verify ID was cleared and new ID generated
+    assertThat(result.getId()).isNotNull();
+    assertThat(result.getId()).isNotEqualTo(999L);
+}
+```
+
+### Test Case: Entity Without ID
+
+```java
+@Test
+void testSaveWithoutId() {
+    EntityDTO dto = new EntityDTO();
+    // ID is null
+
+    EntityDTO result = entityService.save(dto);
+
+    // Verify ID was generated by sequence
+    assertThat(result.getId()).isNotNull();
+}
+```
+
+## Related Documentation
+
+- **Analysis:** `documentation/fixes/DUPLICATE_KEY_ERROR_ANALYSIS.md`
+- **Summary:** `documentation/fixes/DUPLICATE_KEY_ERROR_SUMMARY.html`
+- **AOP Aspect:** `src/main/java/com/nextjstemplate/aop/sequence/SequenceSynchronizationAspect.java`
+- **SQL Sync Script:** `src/main/resources/sqls/sync_sequence_after_inserts.sql`
+- **Schema Script:** `src/main/resources/sqls/Latest_Schema_Post__Blob_Claude_12.sql`
+
+## Notes
+
+- **MapStruct Behavior:** MapStruct automatically maps all fields including ID. If DTO has ID, entity will have ID.
+- **Hibernate Behavior:** If entity has ID set, Hibernate uses INSERT with explicit ID. If ID is null, Hibernate uses sequence generator.
+- **Defense in Depth:** Controller check + Service clearing + AOP aspect provides three layers of protection.
+- **Performance:** ID clearing has negligible performance impact (simple null check).
+
+## Checklist for New Entity Services
+
+When creating a new entity service with `save()` method:
+
+- [ ] Add ID null check before repository.save()
+- [ ] Clear ID if present: `entity.setId(null)`
+- [ ] Add warning log when ID is cleared
+- [ ] Verify controller checks for ID in create endpoint
+- [ ] Test with DTO that has ID set
+- [ ] Test with DTO that has null ID
+- [ ] Verify sequence generator is used (check logs)

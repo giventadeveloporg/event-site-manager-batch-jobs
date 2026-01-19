@@ -10,10 +10,16 @@ import com.eventmanager.batch.dto.StripeFeesTaxUpdateRequest;
 import com.eventmanager.batch.dto.StripeFeesTaxUpdateResponse;
 import com.eventmanager.batch.dto.ManualPaymentSummaryJobRequest;
 import com.eventmanager.batch.dto.ManualPaymentSummaryJobResponse;
+import com.eventmanager.batch.dto.ManualPaymentConfirmationEmailJobRequest;
+import com.eventmanager.batch.dto.ManualPaymentConfirmationEmailJobResponse;
+import com.eventmanager.batch.dto.ManualPaymentTicketEmailJobRequest;
+import com.eventmanager.batch.dto.ManualPaymentTicketEmailJobResponse;
 import com.eventmanager.batch.repository.EventTicketTransactionRepository;
 import com.eventmanager.batch.service.BatchJobOrchestrationService;
 import com.eventmanager.batch.service.ContactFormEmailJobService;
 import com.eventmanager.batch.service.ManualPaymentSummaryJobService;
+import com.eventmanager.batch.service.ManualPaymentConfirmationEmailJobService;
+import com.eventmanager.batch.service.ManualPaymentTicketEmailJobService;
 import com.eventmanager.batch.service.PromotionTestEmailJobService;
 import com.eventmanager.batch.service.StripeFeesTaxUpdateService;
 import jakarta.validation.Valid;
@@ -41,6 +47,8 @@ public class BatchJobController {
     private final ContactFormEmailJobService contactFormEmailJobService;
     private final PromotionTestEmailJobService promotionTestEmailJobService;
     private final ManualPaymentSummaryJobService manualPaymentSummaryJobService;
+    private final ManualPaymentConfirmationEmailJobService manualPaymentConfirmationEmailJobService;
+    private final ManualPaymentTicketEmailJobService manualPaymentTicketEmailJobService;
     private final EventTicketTransactionRepository transactionRepository;
 
     /**
@@ -347,6 +355,80 @@ public class BatchJobController {
                 .body(ManualPaymentSummaryJobResponse.builder()
                     .success(false)
                     .message("Failed to trigger job: " + e.getMessage())
+                    .build());
+        }
+    }
+
+    /**
+     * Trigger manual payment confirmation email job.
+     * Sends confirmation email immediately after payment request creation.
+     */
+    @PostMapping("/manual-payment-confirmation-email")
+    public ResponseEntity<ManualPaymentConfirmationEmailJobResponse> triggerManualPaymentConfirmationEmail(
+        @Valid @RequestBody ManualPaymentConfirmationEmailJobRequest request
+    ) {
+        try {
+            log.info(
+                "Received request to trigger manual payment confirmation email job - tenantId: {}, paymentRequestId: {}, recipientEmail: {}",
+                request.getTenantId(),
+                request.getPaymentRequestId(),
+                request.getRecipientEmail()
+            );
+
+            ManualPaymentConfirmationEmailJobResponse response =
+                manualPaymentConfirmationEmailJobService.triggerManualPaymentConfirmationEmailJob(request);
+
+            if (Boolean.TRUE.equals(response.getSuccess())) {
+                return ResponseEntity.accepted().body(response);
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+        } catch (Exception e) {
+            log.error("Failed to trigger manual payment confirmation email job: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ManualPaymentConfirmationEmailJobResponse.builder()
+                    .success(false)
+                    .message("Failed to trigger job: " + e.getMessage())
+                    .processedCount(0L)
+                    .successCount(0L)
+                    .failedCount(0L)
+                    .build());
+        }
+    }
+
+    /**
+     * Trigger manual payment ticket email job.
+     * Sends ticket email with QR code after admin confirms payment receipt.
+     */
+    @PostMapping("/manual-payment-ticket-email")
+    public ResponseEntity<ManualPaymentTicketEmailJobResponse> triggerManualPaymentTicketEmail(
+        @Valid @RequestBody ManualPaymentTicketEmailJobRequest request
+    ) {
+        try {
+            log.info(
+                "Received request to trigger manual payment ticket email job - tenantId: {}, ticketTransactionId: {}, recipientEmail: {}",
+                request.getTenantId(),
+                request.getTicketTransactionId(),
+                request.getRecipientEmail()
+            );
+
+            ManualPaymentTicketEmailJobResponse response =
+                manualPaymentTicketEmailJobService.triggerManualPaymentTicketEmailJob(request);
+
+            if (Boolean.TRUE.equals(response.getSuccess())) {
+                return ResponseEntity.accepted().body(response);
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+        } catch (Exception e) {
+            log.error("Failed to trigger manual payment ticket email job: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ManualPaymentTicketEmailJobResponse.builder()
+                    .success(false)
+                    .message("Failed to trigger job: " + e.getMessage())
+                    .processedCount(0L)
+                    .successCount(0L)
+                    .failedCount(0L)
                     .build());
         }
     }
