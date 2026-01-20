@@ -70,7 +70,7 @@ public class ManualPaymentSummaryJobService {
             int inserted = jdbcTemplate.update(
                 "INSERT INTO manual_payment_summary_report " +
                     "(tenant_id, event_id, payment_method_type, status, total_amount, transaction_count, snapshot_date, created_at) " +
-                    "SELECT r.tenant_id, r.event_id, r.payment_method_type, r.status, " +
+                    "SELECT r.tenant_id, r.event_id, r.payment_method_type::text, r.status::text, " +
                     "       COALESCE(SUM(r.amount_due), 0), COUNT(*), :snapshotDate, now() " +
                     "FROM manual_payment_request r " +
                     "JOIN event_details e ON e.id = r.event_id " +
