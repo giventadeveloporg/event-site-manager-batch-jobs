@@ -14,6 +14,8 @@ import com.eventmanager.batch.dto.ManualPaymentConfirmationEmailJobRequest;
 import com.eventmanager.batch.dto.ManualPaymentConfirmationEmailJobResponse;
 import com.eventmanager.batch.dto.ManualPaymentTicketEmailJobRequest;
 import com.eventmanager.batch.dto.ManualPaymentTicketEmailJobResponse;
+import com.eventmanager.batch.dto.StripeTicketBatchRefundRequest;
+import com.eventmanager.batch.dto.StripeTicketBatchRefundResponse;
 import com.eventmanager.batch.repository.EventTicketTransactionRepository;
 import com.eventmanager.batch.service.BatchJobOrchestrationService;
 import com.eventmanager.batch.service.ContactFormEmailJobService;
@@ -22,6 +24,7 @@ import com.eventmanager.batch.service.ManualPaymentConfirmationEmailJobService;
 import com.eventmanager.batch.service.ManualPaymentTicketEmailJobService;
 import com.eventmanager.batch.service.PromotionTestEmailJobService;
 import com.eventmanager.batch.service.StripeFeesTaxUpdateService;
+import com.eventmanager.batch.service.StripeTicketBatchRefundService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +52,7 @@ public class BatchJobController {
     private final ManualPaymentSummaryJobService manualPaymentSummaryJobService;
     private final ManualPaymentConfirmationEmailJobService manualPaymentConfirmationEmailJobService;
     private final ManualPaymentTicketEmailJobService manualPaymentTicketEmailJobService;
+    private final StripeTicketBatchRefundService stripeTicketBatchRefundService;
     private final EventTicketTransactionRepository transactionRepository;
 
     /**
@@ -429,6 +433,59 @@ public class BatchJobController {
                     .processedCount(0L)
                     .successCount(0L)
                     .failedCount(0L)
+                    .build());
+        }
+    }
+
+    /**
+     * Trigger Stripe ticket batch refund job.
+     * Processes eligible tickets for an event and creates Stripe refunds.
+     */
+    @PostMapping("/stripe-ticket-batch-refund")
+    public ResponseEntity<StripeTicketBatchRefundResponse> triggerStripeTicketBatchRefund(
+        @Valid @RequestBody StripeTicketBatchRefundRequest request
+    ) {
+        try {
+            log.info(
+                "Received request to trigger Stripe ticket batch refund job - jobId: {}, eventId: {}, tenantId: {}, startDate: {}, endDate: {}",
+                request.getJobId(),
+                request.getEventId(),
+                request.getTenantId(),
+                request.getStartDate(),
+                request.getEndDate()
+            );
+
+            // Start async processing
+            stripeTicketBatchRefundService.processBatchRefund(request)
+                .thenAccept(response -> {
+                    log.info("Stripe ticket batch refund job completed - jobId: {}, status: {}",
+                        response.getJobId(), response.getStatus());
+                })
+                .exceptionally(ex -> {
+                    log.error("Stripe ticket batch refund job failed - jobId: {}", request.getJobId(), ex);
+                    return null;
+                });
+
+            // Return immediate response
+            StripeTicketBatchRefundResponse immediateResponse = StripeTicketBatchRefundResponse.builder()
+                .jobId(request.getJobId())
+                .status("STARTED")
+                .eventId(request.getEventId())
+                .tenantId(request.getTenantId())
+                .startDate(request.getStartDate())
+                .endDate(request.getEndDate())
+                .message("Batch refund job accepted for processing")
+                .build();
+
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(immediateResponse);
+
+        } catch (Exception e) {
+            log.error("Failed to trigger Stripe ticket batch refund job: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(StripeTicketBatchRefundResponse.builder()
+                    .jobId(request != null ? request.getJobId() : null)
+                    .status("FAILED")
+                    .message("Failed to trigger job: " + e.getMessage())
                     .build());
         }
     }

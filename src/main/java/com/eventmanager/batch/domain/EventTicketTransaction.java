@@ -53,4 +53,19 @@ public class EventTicketTransaction implements Serializable {
 
     @Column(name = "created_at", nullable = false)
     private ZonedDateTime createdAt;
+
+    @Column(name = "refund_amount", precision = 21, scale = 2)
+    private BigDecimal refundAmount;
+
+    @Column(name = "refund_date")
+    private ZonedDateTime refundDate;
+
+    @Column(name = "refund_reason", length = 2048)
+    private String refundReason;
+
+    @Column(name = "stripe_payment_status", length = 50)
+    private String stripePaymentStatus;
+
+    @Column(name = "updated_at")
+    private ZonedDateTime updatedAt;
 }

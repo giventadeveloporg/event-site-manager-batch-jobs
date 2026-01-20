@@ -67,4 +67,53 @@ public interface EventTicketTransactionRepository extends JpaRepository<EventTic
         @Param("startDate") java.sql.Timestamp startDate,
         @Param("endDate") java.sql.Timestamp endDate
     );
+
+    /**
+     * Find eligible tickets for batch refund.
+     * Criteria:
+     * - event_id = :eventId
+     * - tenant_id = :tenantId
+     * - stripe_payment_intent_id IS NOT NULL
+     * - status != 'REFUNDED'
+     * - stripe_payment_status IN ('succeeded', 'paid')
+     * - (startDate IS NULL OR purchase_date >= :startDate)
+     * - (endDate IS NULL OR purchase_date <= :endDate)
+     * Ordered by created_at ASC (process oldest first).
+     */
+    @Query(value = "SELECT t.* FROM event_ticket_transaction t " +
+           "WHERE t.event_id = :eventId " +
+           "AND t.tenant_id = :tenantId " +
+           "AND t.stripe_payment_intent_id IS NOT NULL " +
+           "AND t.status != 'REFUNDED' " +
+           "AND t.stripe_payment_status IN ('succeeded', 'paid') " +
+           "AND (:startDate IS NULL OR t.purchase_date >= :startDate) " +
+           "AND (:endDate IS NULL OR t.purchase_date <= :endDate) " +
+           "ORDER BY t.created_at ASC",
+           nativeQuery = true)
+    Page<EventTicketTransaction> findEligibleTicketsForRefund(
+        @Param("eventId") Long eventId,
+        @Param("tenantId") String tenantId,
+        @Param("startDate") java.sql.Timestamp startDate,
+        @Param("endDate") java.sql.Timestamp endDate,
+        Pageable pageable
+    );
+
+    /**
+     * Count eligible tickets for batch refund.
+     */
+    @Query(value = "SELECT COUNT(t.id) FROM event_ticket_transaction t " +
+           "WHERE t.event_id = :eventId " +
+           "AND t.tenant_id = :tenantId " +
+           "AND t.stripe_payment_intent_id IS NOT NULL " +
+           "AND t.status != 'REFUNDED' " +
+           "AND t.stripe_payment_status IN ('succeeded', 'paid') " +
+           "AND (:startDate IS NULL OR t.purchase_date >= :startDate) " +
+           "AND (:endDate IS NULL OR t.purchase_date <= :endDate)",
+           nativeQuery = true)
+    long countEligibleTicketsForRefund(
+        @Param("eventId") Long eventId,
+        @Param("tenantId") String tenantId,
+        @Param("startDate") java.sql.Timestamp startDate,
+        @Param("endDate") java.sql.Timestamp endDate
+    );
 }
