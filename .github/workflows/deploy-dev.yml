@@ -14,9 +14,12 @@ on:
         type: string
 
 env:
-  # Prefer GitHub environment variable; fall back to us-east-2 (S3 bucket region)
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
-  ECR_REPOSITORY: event-site-manager-batch-jobs-dev
+  # ECS/ECR/ECS deploy region (override via vars.AWS_DEPLOY_REGION if needed)
+  AWS_DEPLOY_REGION: ${{ vars.AWS_DEPLOY_REGION || 'us-east-1' }}
+  # S3/SES runtime region injected into the container (matches application.yml default)
+  AWS_S3_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+  # Set ECR_REPOSITORY_DEV in GitHub environment variables to match the repo in AWS ECR
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY_DEV || 'event-site-manager-batch-jobs-dev' }}
   ECS_SERVICE: event-site-manager-dev-batch-jobs-service
   ECS_CLUSTER: event-site-manager-dev-cluster
   ECS_TASK_DEFINITION: event-site-manager-dev-batch-jobs
@@ -51,11 +54,29 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AWS_DEPLOY_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Verify ECR repository exists
+        env:
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        run: |
+          if [ -z "$ECR_REPOSITORY" ]; then
+            echo "::error::ECR_REPOSITORY is empty. Set ECR_REPOSITORY_DEV in the dev environment variables."
+            exit 1
+          fi
+          echo "Checking ECR repository '$ECR_REPOSITORY' in region '${{ env.AWS_DEPLOY_REGION }}'..."
+          if ! aws ecr describe-repositories \
+            --repository-names "$ECR_REPOSITORY" \
+            --region "${{ env.AWS_DEPLOY_REGION }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '$ECR_REPOSITORY' was not found in account/region ${{ env.AWS_DEPLOY_REGION }}."
+            echo "Create the repository in AWS ECR or set ECR_REPOSITORY_DEV to the existing repository name."
+            exit 1
+          fi
+          echo "ECR repository '$ECR_REPOSITORY' exists."
 
       - name: Build, tag, and push image to Amazon ECR
         id: build-image
@@ -89,7 +110,7 @@ jobs:
           jq --arg container "$CONTAINER_NAME" \
              --arg access_key "$AWS_ACCESS_KEY_ID" \
              --arg secret_key "$AWS_SECRET_ACCESS_KEY" \
-             --arg region "${{ env.AWS_REGION }}" \
+             --arg region "${{ env.AWS_S3_REGION }}" \
              --arg bucket "$AWS_S3_BUCKET_NAME" \
              '
              .containerDefinitions = [
