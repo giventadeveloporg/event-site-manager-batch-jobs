@@ -1,33 +1,34 @@
-name: Deploy to Dev
+# Deploy Batch Jobs to AWS ECS Fargate — Production
+# Trigger manually (workflow_dispatch) or by push/merge to release/v1.0.0 only.
 
-# Triggered on push to any branch, or manually (workflow_dispatch).
+name: Deploy to Production
 
 on:
-  push:
-    branches:
-      - '**'
   workflow_dispatch:
     inputs:
       version:
         description: 'Version tag (optional)'
         required: false
         type: string
+  push:
+    branches:
+      - release/v1.0.0
 
 env:
   # Prefer GitHub environment variable; fall back to us-east-2 (S3 bucket region)
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
-  ECR_REPOSITORY: event-site-manager-batch-jobs-dev
-  ECS_SERVICE: event-site-manager-dev-batch-jobs-service
-  ECS_CLUSTER: event-site-manager-dev-cluster
-  ECS_TASK_DEFINITION: event-site-manager-dev-batch-jobs
+  ECR_REPOSITORY: event-site-manager-batch-jobs-prod
+  ECS_SERVICE: event-site-manager-prod-batch-jobs-service
+  ECS_CLUSTER: event-site-manager-prod-cluster
+  ECS_TASK_DEFINITION: event-site-manager-prod-batch-jobs
   # Must match the container "name" in the ECS task definition in AWS (see task definition JSON in ECS console)
   CONTAINER_NAME: batch-jobs-service
 
 jobs:
   deploy:
-    name: Deploy to Dev Environment
+    name: Deploy to Production Environment
     runs-on: ubuntu-latest
-    environment: dev
+    environment: production
 
     steps:
       - name: Checkout code
