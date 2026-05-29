@@ -1,36 +1,37 @@
-name: Deploy to Dev
+# Deploy Batch Jobs to AWS ECS Fargate — Production
+# Trigger manually (workflow_dispatch) or by push/merge to release/v1.0.0 only.
 
-# Triggered on push to any branch, or manually (workflow_dispatch).
+name: Deploy to Production
 
 on:
-  push:
-    branches:
-      - '**'
   workflow_dispatch:
     inputs:
       version:
         description: 'Version tag (optional)'
         required: false
         type: string
+  push:
+    branches:
+      - release/v1.0.0
 
 env:
   # ECS/ECR/ECS deploy region (override via vars.AWS_DEPLOY_REGION if needed)
   AWS_DEPLOY_REGION: ${{ vars.AWS_DEPLOY_REGION || 'us-east-1' }}
   # S3/SES runtime region injected into the container (matches application.yml default)
   AWS_S3_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
-  # Set ECR_REPOSITORY_DEV in GitHub environment variables to match the repo in AWS ECR
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY_DEV || 'event-site-manager-batch-jobs-dev' }}
-  ECS_SERVICE: event-site-manager-dev-batch-jobs-service
-  ECS_CLUSTER: event-site-manager-dev-cluster
-  ECS_TASK_DEFINITION: event-site-manager-dev-batch-jobs
+  # Set ECR_REPOSITORY_PROD in GitHub environment variables to match the repo in AWS ECR
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY_PROD || 'event-site-manager-batch-jobs-prod' }}
+  ECS_SERVICE: event-site-manager-prod-batch-jobs-service
+  ECS_CLUSTER: event-site-manager-prod-cluster
+  ECS_TASK_DEFINITION: event-site-manager-prod-batch-jobs
   # Must match the container "name" in the ECS task definition in AWS (see task definition JSON in ECS console)
   CONTAINER_NAME: batch-jobs-service
 
 jobs:
   deploy:
-    name: Deploy to Dev Environment
+    name: Deploy to Production Environment
     runs-on: ubuntu-latest
-    environment: dev
+    environment: production
 
     steps:
       - name: Checkout code
@@ -65,7 +66,7 @@ jobs:
           ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
         run: |
           if [ -z "$ECR_REPOSITORY" ]; then
-            echo "::error::ECR_REPOSITORY is empty. Set ECR_REPOSITORY_DEV in the dev environment variables."
+            echo "::error::ECR_REPOSITORY is empty. Set ECR_REPOSITORY_PROD in the production environment variables."
             exit 1
           fi
           echo "Checking ECR repository '$ECR_REPOSITORY' in region '${{ env.AWS_DEPLOY_REGION }}'..."
@@ -73,7 +74,7 @@ jobs:
             --repository-names "$ECR_REPOSITORY" \
             --region "${{ env.AWS_DEPLOY_REGION }}" >/dev/null 2>&1; then
             echo "::error::ECR repository '$ECR_REPOSITORY' was not found in account/region ${{ env.AWS_DEPLOY_REGION }}."
-            echo "Create the repository in AWS ECR or set ECR_REPOSITORY_DEV to the existing repository name."
+            echo "Create the repository in AWS ECR or set ECR_REPOSITORY_PROD to the existing repository name."
             exit 1
           fi
           echo "ECR repository '$ECR_REPOSITORY' exists."
