@@ -1,5 +1,6 @@
 package com.eventmanager.batch.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -28,12 +29,25 @@ public class ContactFormEmailJobRequest {
     @Size(max = 4096)
     private String messageBody;
 
+    /**
+     * Visitor email address (Reply-To and confirmation copy for CONTACT type).
+     */
     @NotBlank
     @Email
     @Size(max = 255)
-    private String fromEmail;
+    @JsonAlias("fromEmail")
+    private String senderEmail;
 
+    /**
+     * Tenant email type used to resolve SES from/to from tenant_email_addresses (e.g. CONTACT).
+     */
     @NotBlank
+    @Size(max = 50)
+    private String emailType;
+
+    /**
+     * Optional inbox override. When blank, resolved from tenant_email_addresses by emailType.
+     */
     @Email
     @Size(max = 255)
     private String toEmail;
@@ -43,11 +57,3 @@ public class ContactFormEmailJobRequest {
 
     private Long userId;
 }
-
-
-
-
-
-
-
-

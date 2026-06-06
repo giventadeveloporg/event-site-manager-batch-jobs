@@ -24,6 +24,18 @@ public class EventCompetitionEmailContentBuilderService {
     String eventTitle,
     String tenantId
   ) {
+    return buildRegistrationConfirmationEmailBody(participantName, competitionName, feeAmount, eventTitle, tenantId, null, null);
+  }
+
+  public String buildRegistrationConfirmationEmailBody(
+    String participantName,
+    String competitionName,
+    BigDecimal feeAmount,
+    String eventTitle,
+    String tenantId,
+    String teamName,
+    List<String> rosterMemberNames
+  ) {
     StringBuilder html = new StringBuilder();
     html.append("<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>");
     appendHeader(html, tenantId);
@@ -51,7 +63,22 @@ public class EventCompetitionEmailContentBuilderService {
     }
     html.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Status:</strong></td>")
       .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'><span style='color: #059669; font-weight: bold;'>Confirmed</span></td></tr>");
+    if (teamName != null && !teamName.isBlank()) {
+      html.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Team:</strong></td>")
+        .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+        .append(escapeHtml(teamName))
+        .append("</td></tr>");
+    }
     html.append("</table>");
+
+    if (rosterMemberNames != null && !rosterMemberNames.isEmpty()) {
+      html.append("<h2 style='color: #1f4c8f;'>Team Roster</h2><ul style='margin: 0 0 20px 20px;'>");
+      for (String member : rosterMemberNames) {
+        html.append("<li>").append(escapeHtml(member)).append("</li>");
+      }
+      html.append("</ul>");
+    }
+
     html.append("<p>We look forward to seeing you at the competition. Good luck!</p>");
     html.append("</div>");
 

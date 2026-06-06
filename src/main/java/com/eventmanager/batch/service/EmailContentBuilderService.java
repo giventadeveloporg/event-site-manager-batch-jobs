@@ -3,6 +3,8 @@ package com.eventmanager.batch.service;
 import com.eventmanager.batch.domain.PromotionEmailTemplate;
 import com.eventmanager.batch.domain.TenantSettings;
 import com.eventmanager.batch.dto.ContactFormEmailJobRequest;
+import com.eventmanager.batch.dto.EventCompetitionSummaryRow;
+import com.eventmanager.batch.dto.EventCompetitionWinnerHighlight;
 import com.eventmanager.batch.dto.ManualPaymentConfirmationEmailJobRequest;
 import com.eventmanager.batch.dto.ManualPaymentTicketEmailJobRequest;
 import com.eventmanager.batch.repository.TenantSettingsRepository;
@@ -282,7 +284,7 @@ public class EmailContentBuilderService {
             .append(escapeHtml(request.getLastName()))
             .append("</p>");
         fullHtml.append("<p><strong>Email:</strong> ")
-            .append(escapeHtml(request.getFromEmail()))
+            .append(escapeHtml(request.getSenderEmail()))
             .append("</p>");
         fullHtml.append("<p><strong>Message:</strong><br/>")
             .append(escapeHtml(request.getMessageBody()).replace("\n", "<br/>"))
@@ -328,7 +330,7 @@ public class EmailContentBuilderService {
         fullHtml.append("<p>We have received your message and will get back to you as soon as possible.</p>");
         fullHtml.append("<p><strong>Your message details:</strong></p>");
         fullHtml.append("<p><strong>Email:</strong> ")
-            .append(escapeHtml(request.getFromEmail()))
+            .append(escapeHtml(request.getSenderEmail()))
             .append("</p>");
         fullHtml.append("<p><strong>Message:</strong><br/>")
             .append(escapeHtml(request.getMessageBody()).replace("\n", "<br/>"))
@@ -863,6 +865,215 @@ public class EmailContentBuilderService {
 
         fullHtml.append("</body></html>");
         return fullHtml.toString();
+    }
+
+    public String buildEventCompetitionRegistrationConfirmationEmailBody(
+        String participantName,
+        String competitionName,
+        java.math.BigDecimal feeAmount,
+        String eventTitle,
+        String tenantId
+    ) {
+        StringBuilder fullHtml = new StringBuilder();
+        fullHtml.append("<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>");
+
+        String headerImageUrl = getTenantEmailHeaderImageUrl(tenantId);
+        if (headerImageUrl != null && !headerImageUrl.isEmpty()) {
+            fullHtml.append("<div style='text-align: center; margin-bottom: 20px;'>")
+                .append("<img src='")
+                .append(headerImageUrl)
+                .append("' alt='Header' style='max-width: 100%; height: auto;' />")
+                .append("</div>");
+        }
+
+        fullHtml.append("<div style='max-width: 600px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>");
+        fullHtml.append("<h1 style='color: #1f4c8f;'>Competition Registration Confirmed</h1>");
+        fullHtml.append("<p>Dear ").append(escapeHtml(participantName)).append(",</p>");
+        fullHtml.append("<p>Your registration has been confirmed");
+        if (eventTitle != null && !eventTitle.isEmpty()) {
+            fullHtml.append(" for <strong>").append(escapeHtml(eventTitle)).append("</strong>");
+        }
+        fullHtml.append(".</p>");
+
+        fullHtml.append("<h2 style='color: #1f4c8f;'>Registration Details</h2>");
+        fullHtml.append("<table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>");
+        fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Competition:</strong></td>")
+            .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+            .append(escapeHtml(competitionName))
+            .append("</td></tr>");
+        if (feeAmount != null) {
+            fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Fee Paid:</strong></td>")
+                .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>$")
+                .append(escapeHtml(feeAmount.toString()))
+                .append("</td></tr>");
+        }
+        fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Status:</strong></td>")
+            .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'><span style='color: #059669; font-weight: bold;'>Confirmed</span></td></tr>");
+        fullHtml.append("</table>");
+        fullHtml.append("<p>We look forward to seeing you at the competition. Good luck!</p>");
+        fullHtml.append("</div>");
+
+        appendTenantFooter(fullHtml, tenantId);
+        fullHtml.append("</body></html>");
+        return fullHtml.toString();
+    }
+
+    public String buildEventCompetitionWinnersPublishedEmailBody(
+        String eventTitle,
+        String winnersUrl,
+        java.util.List<EventCompetitionWinnerHighlight> highlights,
+        String tenantId
+    ) {
+        StringBuilder fullHtml = new StringBuilder();
+        fullHtml.append("<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>");
+
+        String headerImageUrl = getTenantEmailHeaderImageUrl(tenantId);
+        if (headerImageUrl != null && !headerImageUrl.isEmpty()) {
+            fullHtml.append("<div style='text-align: center; margin-bottom: 20px;'>")
+                .append("<img src='")
+                .append(headerImageUrl)
+                .append("' alt='Header' style='max-width: 100%; height: auto;' />")
+                .append("</div>");
+        }
+
+        fullHtml.append("<div style='max-width: 600px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>");
+        fullHtml.append("<h1 style='color: #1f4c8f;'>Competition Results Published</h1>");
+        if (eventTitle != null && !eventTitle.isEmpty()) {
+            fullHtml.append("<p>The results for <strong>").append(escapeHtml(eventTitle)).append("</strong> are now available.</p>");
+        } else {
+            fullHtml.append("<p>Competition results are now available.</p>");
+        }
+
+        if (highlights != null && !highlights.isEmpty()) {
+            fullHtml.append("<h2 style='color: #1f4c8f;'>Top Placements</h2>");
+            fullHtml.append("<table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>");
+            fullHtml.append("<tr style='background-color: #f0f7ff;'>")
+                .append("<th style='padding: 8px; text-align: left; border-bottom: 2px solid #0066cc;'>Competition</th>")
+                .append("<th style='padding: 8px; text-align: left; border-bottom: 2px solid #0066cc;'>Place</th>")
+                .append("<th style='padding: 8px; text-align: left; border-bottom: 2px solid #0066cc;'>Winner</th>")
+                .append("</tr>");
+            for (EventCompetitionWinnerHighlight highlight : highlights) {
+                String placeLabel = highlight.getPlacementLabel() != null && !highlight.getPlacementLabel().isEmpty()
+                    ? highlight.getPlacementLabel()
+                    : (highlight.getPlacement() != null ? "#" + highlight.getPlacement() : "-");
+                fullHtml.append("<tr>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(highlight.getCompetitionName()))
+                    .append("</td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(placeLabel))
+                    .append("</td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(highlight.getDisplayName()))
+                    .append("</td>")
+                    .append("</tr>");
+            }
+            fullHtml.append("</table>");
+        }
+
+        if (winnersUrl != null && !winnersUrl.isEmpty()) {
+            fullHtml.append("<p style='text-align: center; margin: 30px 0;'>")
+                .append("<a href='")
+                .append(escapeHtml(winnersUrl))
+                .append("' style='background-color: #0066cc; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;'>View Full Results</a>")
+                .append("</p>");
+        }
+        fullHtml.append("</div>");
+
+        appendTenantFooter(fullHtml, tenantId);
+        fullHtml.append("</body></html>");
+        return fullHtml.toString();
+    }
+
+    public String buildEventCompetitionRegistrationSummaryEmailBody(
+        String eventTitle,
+        java.util.List<EventCompetitionSummaryRow> summaryRows,
+        long totalRegistrations,
+        String tenantId
+    ) {
+        StringBuilder fullHtml = new StringBuilder();
+        fullHtml.append("<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>");
+
+        String headerImageUrl = getTenantEmailHeaderImageUrl(tenantId);
+        if (headerImageUrl != null && !headerImageUrl.isEmpty()) {
+            fullHtml.append("<div style='text-align: center; margin-bottom: 20px;'>")
+                .append("<img src='")
+                .append(headerImageUrl)
+                .append("' alt='Header' style='max-width: 100%; height: auto;' />")
+                .append("</div>");
+        }
+
+        fullHtml.append("<div style='max-width: 700px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>");
+        fullHtml.append("<h1 style='color: #1f4c8f;'>Competition Registration Summary</h1>");
+        if (eventTitle != null && !eventTitle.isEmpty()) {
+            fullHtml.append("<p>Registration summary for <strong>").append(escapeHtml(eventTitle)).append("</strong>.</p>");
+        }
+        fullHtml.append("<p><strong>Total confirmed registrations:</strong> ").append(totalRegistrations).append("</p>");
+
+        if (summaryRows != null && !summaryRows.isEmpty()) {
+            fullHtml.append("<table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>");
+            fullHtml.append("<tr style='background-color: #f0f7ff;'>")
+                .append("<th style='padding: 8px; text-align: left; border-bottom: 2px solid #0066cc;'>Competition</th>")
+                .append("<th style='padding: 8px; text-align: right; border-bottom: 2px solid #0066cc;'>Confirmed</th>")
+                .append("<th style='padding: 8px; text-align: right; border-bottom: 2px solid #0066cc;'>Pending</th>")
+                .append("<th style='padding: 8px; text-align: right; border-bottom: 2px solid #0066cc;'>Cancelled</th>")
+                .append("<th style='padding: 8px; text-align: right; border-bottom: 2px solid #0066cc;'>Total Fees</th>")
+                .append("</tr>");
+            for (EventCompetitionSummaryRow row : summaryRows) {
+                fullHtml.append("<tr>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'>")
+                    .append(escapeHtml(row.getCompetitionName()))
+                    .append("</td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd; text-align: right;'>")
+                    .append(row.getConfirmedCount() != null ? row.getConfirmedCount() : 0)
+                    .append("</td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd; text-align: right;'>")
+                    .append(row.getPendingCount() != null ? row.getPendingCount() : 0)
+                    .append("</td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd; text-align: right;'>")
+                    .append(row.getCancelledCount() != null ? row.getCancelledCount() : 0)
+                    .append("</td>")
+                    .append("<td style='padding: 8px; border-bottom: 1px solid #ddd; text-align: right;'>$")
+                    .append(row.getTotalFees() != null ? escapeHtml(row.getTotalFees().toString()) : "0.00")
+                    .append("</td>")
+                    .append("</tr>");
+            }
+            fullHtml.append("</table>");
+        } else {
+            fullHtml.append("<p>No registration data found for this event.</p>");
+        }
+        fullHtml.append("</div>");
+
+        appendTenantFooter(fullHtml, tenantId);
+        fullHtml.append("</body></html>");
+        return fullHtml.toString();
+    }
+
+    public String applyCompetitionTemplatePlaceholders(
+        String content,
+        String participantName,
+        String competitionName,
+        java.math.BigDecimal feeAmount,
+        String eventTitle,
+        String winnersUrl
+    ) {
+        if (content == null) {
+            return "";
+        }
+        String result = content;
+        result = result.replace("{{participantName}}", participantName != null ? participantName : "");
+        result = result.replace("{{competitionName}}", competitionName != null ? competitionName : "");
+        result = result.replace("{{feeAmount}}", feeAmount != null ? feeAmount.toString() : "");
+        result = result.replace("{{eventTitle}}", eventTitle != null ? eventTitle : "");
+        result = result.replace("{{winnersUrl}}", winnersUrl != null ? winnersUrl : "");
+        return result;
+    }
+
+    private void appendTenantFooter(StringBuilder fullHtml, String tenantId) {
+        String footerHtml = getTenantEmailFooterHtml(tenantId);
+        if (footerHtml != null && !footerHtml.isEmpty()) {
+            fullHtml.append("<div>").append(footerHtml).append("</div>");
+        }
     }
 }
 

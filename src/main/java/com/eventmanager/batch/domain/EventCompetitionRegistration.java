@@ -48,6 +48,12 @@ public class EventCompetitionRegistration implements Serializable {
     @Column(name = "group_leader_registration_id")
     private Long groupLeaderRegistrationId;
 
+    @Column(name = "team_name", length = 200)
+    private String teamName;
+
+    @Column(name = "team_display_name", length = 200)
+    private String teamDisplayName;
+
     @Column(name = "registered_by_user_profile_id", nullable = false)
     private Long registeredByUserProfileId;
 

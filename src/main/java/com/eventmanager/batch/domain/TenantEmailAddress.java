@@ -48,6 +48,9 @@ public class TenantEmailAddress implements Serializable {
     @Column(name = "copy_to_email_address", length = 255)
     private String copyToEmailAddress;
 
+    @Column(name = "reply_to_email_address", length = 255)
+    private String replyToEmailAddress;
+
     @Column(name = "description", length = 1024)
     private String description;
 

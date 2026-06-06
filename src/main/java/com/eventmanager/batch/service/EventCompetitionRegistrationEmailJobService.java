@@ -7,6 +7,7 @@ import com.eventmanager.batch.domain.EventCompetitionRegistration;
 import com.eventmanager.batch.domain.PromotionEmailTemplate;
 import com.eventmanager.batch.dto.EventCompetitionRegistrationEmailJobRequest;
 import com.eventmanager.batch.dto.EventCompetitionRegistrationEmailJobResponse;
+import com.eventmanager.batch.repository.EventCompetitionGroupMemberRepository;
 import com.eventmanager.batch.repository.EventCompetitionParticipantRepository;
 import com.eventmanager.batch.repository.EventCompetitionRegistrationRepository;
 import com.eventmanager.batch.repository.EventCompetitionRepository;
@@ -30,6 +31,7 @@ public class EventCompetitionRegistrationEmailJobService {
   private final EventCompetitionRegistrationRepository registrationRepository;
   private final EventCompetitionParticipantRepository participantRepository;
   private final EventCompetitionRepository competitionRepository;
+  private final EventCompetitionGroupMemberRepository groupMemberRepository;
   private final PromotionEmailTemplateRepository promotionEmailTemplateRepository;
   private final ManualPaymentConfirmationEmailJobService manualPaymentConfirmationEmailJobService;
   private final EventCompetitionEmailContentBuilderService eventCompetitionEmailContentBuilderService;
@@ -148,6 +150,10 @@ public class EventCompetitionRegistrationEmailJobService {
           }
 
           String participantName = resolveParticipantName(participant);
+          String teamDisplayName = registration.getTeamDisplayName() != null && !registration.getTeamDisplayName().isBlank()
+            ? registration.getTeamDisplayName()
+            : registration.getTeamName();
+          List<String> rosterNames = resolveRosterNames(registration);
           String subject;
           String bodyHtml;
 
@@ -185,7 +191,9 @@ public class EventCompetitionRegistrationEmailJobService {
               competition.getName(),
               registration.getFeeAmount(),
               eventTitle,
-              request.getTenantId()
+              request.getTenantId(),
+              teamDisplayName,
+              rosterNames
             );
           }
 
@@ -249,6 +257,21 @@ public class EventCompetitionRegistrationEmailJobService {
       return participant.getDisplayName();
     }
     return participant.getFirstName() + " " + participant.getLastName();
+  }
+
+  private List<String> resolveRosterNames(EventCompetitionRegistration registration) {
+    List<com.eventmanager.batch.domain.EventCompetitionGroupMember> members = groupMemberRepository.findByRegistrationIdAndTenantIdOrderBySortOrderAsc(
+      registration.getId(),
+      registration.getTenantId()
+    );
+    if (members.isEmpty()) {
+      return List.of();
+    }
+    List<String> names = new java.util.ArrayList<>();
+    for (com.eventmanager.batch.domain.EventCompetitionGroupMember member : members) {
+      participantRepository.findById(member.getParticipantProfileId()).ifPresent(p -> names.add(resolveParticipantName(p)));
+    }
+    return names;
   }
 
   private EventCompetitionRegistrationEmailJobResponse failureResponse(String message) {
