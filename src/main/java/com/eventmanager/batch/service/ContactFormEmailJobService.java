@@ -33,7 +33,6 @@ public class ContactFormEmailJobService {
      * Creates a job execution record and starts asynchronous processing.
      */
     public ContactFormEmailJobResponse triggerContactFormEmailJob(ContactFormEmailJobRequest request) {
-        // Basic validation (Bean Validation will handle most, but double-check tenantId)
         if (request.getTenantId() == null || request.getTenantId().isBlank()) {
             return ContactFormEmailJobResponse.builder()
                 .success(false)
@@ -45,10 +44,10 @@ public class ContactFormEmailJobService {
         }
 
         String parametersJson = String.format(
-            "{\"tenantId\":\"%s\",\"fromEmail\":\"%s\",\"toEmail\":\"%s\"}",
+            "{\"tenantId\":\"%s\",\"senderEmail\":\"%s\",\"emailType\":\"%s\"}",
             request.getTenantId(),
-            request.getFromEmail(),
-            request.getToEmail()
+            request.getSenderEmail(),
+            request.getEmailType()
         );
 
         BatchJobExecution execution = batchJobExecutionService.createJobExecution(
@@ -59,7 +58,6 @@ public class ContactFormEmailJobService {
             parametersJson
         );
 
-        // Fire-and-forget async processing
         processContactFormEmailAsync(execution.getId(), request);
 
         return ContactFormEmailJobResponse.builder()
@@ -83,10 +81,11 @@ public class ContactFormEmailJobService {
 
         try {
             String tenantId = request.getTenantId();
+            TenantEmailType emailType = resolveEmailType(request);
 
-            String fromAddress = resolveContactFromEmail(tenantId);
+            String fromAddress = resolveFromEmailByType(tenantId, emailType);
             if (fromAddress == null || fromAddress.isEmpty()) {
-                log.warn("No FROM address resolved for tenant: {}, aborting contact form email", tenantId);
+                log.warn("No FROM address resolved for tenant {} and emailType {}", tenantId, emailType);
                 failedCount = 1L;
                 batchJobExecutionService.completeJobExecution(
                     executionId,
@@ -94,12 +93,31 @@ public class ContactFormEmailJobService {
                     processedCount,
                     successCount,
                     failedCount,
-                    "No FROM address configured for tenant"
+                    "No FROM address configured for tenant and email type " + emailType
                 );
                 return;
             }
 
-            String copyToAddress = resolveContactCopyToEmail(tenantId);
+            String toAddress = request.getToEmail();
+            if (toAddress == null || toAddress.isBlank()) {
+                toAddress = resolveToEmailByType(tenantId, emailType);
+            }
+            if (toAddress == null || toAddress.isBlank()) {
+                log.warn("No TO address resolved for tenant {} and emailType {}", tenantId, emailType);
+                failedCount = 1L;
+                batchJobExecutionService.completeJobExecution(
+                    executionId,
+                    "FAILED",
+                    processedCount,
+                    successCount,
+                    failedCount,
+                    "No TO address configured for tenant and email type " + emailType
+                );
+                return;
+            }
+
+            String copyToAddress = resolveCopyToEmailByType(tenantId, emailType);
+            String replyToAddress = resolveEffectiveReplyTo(tenantId, emailType, request);
 
             String subject = String.format(
                 "Contact Form Submission from %s %s",
@@ -112,21 +130,21 @@ public class ContactFormEmailJobService {
 
             processedCount = 1L;
 
-            // Main email to tenant TO address with Reply-To set to visitor email
+            // Main email to tenant inbox with Reply-To from tenant config or visitor email
             emailService.sendEmail(
                 fromAddress,
-                request.getFromEmail(),
-                request.getToEmail(),
+                replyToAddress,
+                toAddress,
                 subject,
                 mainBody,
                 true
             );
 
-            // Copy email if configured
-            if (copyToAddress != null && !copyToAddress.isBlank()) {
+            // Optional CC copy from tenant_email_addresses.copy_to_email_address
+            if (copyToAddress != null && !copyToAddress.isBlank() && !copyToAddress.equalsIgnoreCase(toAddress)) {
                 emailService.sendEmail(
                     fromAddress,
-                    request.getFromEmail(),
+                    replyToAddress,
                     copyToAddress,
                     subject + " (Copy)",
                     mainBody,
@@ -134,15 +152,17 @@ public class ContactFormEmailJobService {
                 );
             }
 
-            // Confirmation email to visitor (no Reply-To required)
-            emailService.sendEmail(
-                fromAddress,
-                null,
-                request.getFromEmail(),
-                "We received your message",
-                confirmationBody,
-                true
-            );
+            // Confirmation copy to visitor for CONTACT-type submissions
+            if (TenantEmailType.CONTACT.equals(emailType)) {
+                emailService.sendEmail(
+                    fromAddress,
+                    null,
+                    request.getSenderEmail(),
+                    "We received your message",
+                    confirmationBody,
+                    true
+                );
+            }
 
             successCount = 1L;
             batchJobExecutionService.completeJobExecution(
@@ -167,86 +187,117 @@ public class ContactFormEmailJobService {
         }
     }
 
-    /**
-     * Resolve FROM address for contact form emails for a tenant.
-     * Prefers CONTACT type, then default, then any active email address.
-     */
-    @Cacheable(cacheNames = "tenantEmailFromCache", key = "#tenantId", unless = "#result == null || #result.isEmpty()")
-    public String resolveContactFromEmail(String tenantId) {
-        if (tenantId == null || tenantId.isBlank()) {
-            return "";
+    private TenantEmailType resolveEmailType(ContactFormEmailJobRequest request) {
+        if (request.getEmailType() == null || request.getEmailType().isBlank()) {
+            return TenantEmailType.CONTACT;
+        }
+        try {
+            return TenantEmailType.valueOf(request.getEmailType().trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            log.warn("Unknown emailType '{}', defaulting to CONTACT", request.getEmailType());
+            return TenantEmailType.CONTACT;
+        }
+    }
+
+    private Optional<TenantEmailAddress> selectTenantEmailAddress(String tenantId, TenantEmailType emailType) {
+        Optional<TenantEmailAddress> preferred = tenantEmailAddressRepository
+            .findFirstByTenantIdAndEmailTypeAndIsActiveTrueOrderByIsDefaultDesc(tenantId, emailType);
+        if (preferred.isPresent()) {
+            return preferred;
         }
 
-        // 1. Prefer CONTACT type, active and default first
-        Optional<TenantEmailAddress> preferredContact = tenantEmailAddressRepository
-            .findFirstByTenantIdAndEmailTypeAndIsActiveTrueOrderByIsDefaultDesc(tenantId, TenantEmailType.CONTACT);
-
-        if (preferredContact.isPresent()) {
-            String value = preferredContact.get().getEmailAddress();
-            return value;
-        }
-
-        // 2. Fall back to default active email
         Optional<TenantEmailAddress> defaultEmail = tenantEmailAddressRepository
             .findFirstByTenantIdAndIsDefaultTrueAndIsActiveTrueOrderByIdAsc(tenantId);
         if (defaultEmail.isPresent()) {
-            String value = defaultEmail.get().getEmailAddress();
-            return value;
+            return defaultEmail;
         }
 
-        // 3. Fall back to any active email
-        List<TenantEmailAddress> activeEmails = tenantEmailAddressRepository
-            .findByTenantIdAndIsActiveTrue(tenantId);
+        List<TenantEmailAddress> activeEmails = tenantEmailAddressRepository.findByTenantIdAndIsActiveTrue(tenantId);
         if (!activeEmails.isEmpty()) {
-            String value = activeEmails.get(0).getEmailAddress();
-            return value;
+            return Optional.of(activeEmails.get(0));
         }
 
-        log.warn("No active tenant email address found for tenant: {}", tenantId);
-        return "";
+        return Optional.empty();
     }
 
     /**
-     * Resolve COPY-TO address for contact form emails for a tenant.
-     * Uses the same selection algorithm as resolveContactFromEmail, but
-     * returns the copyToEmailAddress field if configured.
+     * Resolve verified SES FROM address for the given tenant and email type.
      */
-    @Cacheable(cacheNames = "tenantEmailCopyToCache", key = "#tenantId", unless = "#result == null || #result.isEmpty()")
-    public String resolveContactCopyToEmail(String tenantId) {
+    @Cacheable(cacheNames = "tenantEmailFromCache", key = "#tenantId + ':' + #emailType", unless = "#result == null || #result.isEmpty()")
+    public String resolveFromEmailByType(String tenantId, TenantEmailType emailType) {
         if (tenantId == null || tenantId.isBlank()) {
             return "";
         }
 
-        // 1. Prefer CONTACT type, active and default first
-        Optional<TenantEmailAddress> preferredContact = tenantEmailAddressRepository
-            .findFirstByTenantIdAndEmailTypeAndIsActiveTrueOrderByIsDefaultDesc(tenantId, TenantEmailType.CONTACT);
+        return selectTenantEmailAddress(tenantId, emailType)
+            .map(TenantEmailAddress::getEmailAddress)
+            .orElseGet(() -> {
+                log.warn("No active tenant email address found for tenant {} and type {}", tenantId, emailType);
+                return "";
+            });
+    }
 
-        Optional<TenantEmailAddress> selected = preferredContact;
+    /**
+     * Resolve primary inbox (TO) for contact submissions.
+     * Prefers copy_to_email_address when set, otherwise uses the verified from address.
+     */
+    @Cacheable(cacheNames = "tenantEmailToCache", key = "#tenantId + ':' + #emailType", unless = "#result == null || #result.isEmpty()")
+    public String resolveToEmailByType(String tenantId, TenantEmailType emailType) {
+        if (tenantId == null || tenantId.isBlank()) {
+            return "";
+        }
 
-        // 2. Fall back to default active email
+        Optional<TenantEmailAddress> selected = selectTenantEmailAddress(tenantId, emailType);
         if (selected.isEmpty()) {
-            selected = tenantEmailAddressRepository
-                .findFirstByTenantIdAndIsDefaultTrueAndIsActiveTrueOrderByIdAsc(tenantId);
+            return "";
         }
 
-        // 3. Fall back to any active email
-        if (selected.isEmpty()) {
-            List<TenantEmailAddress> activeEmails = tenantEmailAddressRepository
-                .findByTenantIdAndIsActiveTrue(tenantId);
-            if (!activeEmails.isEmpty()) {
-                selected = Optional.of(activeEmails.get(0));
-            }
+        TenantEmailAddress address = selected.get();
+        String copyTo = address.getCopyToEmailAddress();
+        if (copyTo != null && !copyTo.isBlank()) {
+            return copyTo;
+        }
+        return address.getEmailAddress();
+    }
+
+    /**
+     * Resolve optional CC copy address from tenant_email_addresses.copy_to_email_address.
+     */
+    @Cacheable(cacheNames = "tenantEmailCopyToCache", key = "#tenantId + ':' + #emailType", unless = "#result == null || #result.isEmpty()")
+    public String resolveCopyToEmailByType(String tenantId, TenantEmailType emailType) {
+        if (tenantId == null || tenantId.isBlank()) {
+            return "";
         }
 
-        if (selected.isPresent()) {
-            String copyTo = selected.get().getCopyToEmailAddress();
-            if (copyTo != null && !copyTo.isBlank()) {
-                return copyTo;
-            }
+        return selectTenantEmailAddress(tenantId, emailType)
+            .map(TenantEmailAddress::getCopyToEmailAddress)
+            .filter(copyTo -> copyTo != null && !copyTo.isBlank())
+            .orElse("");
+    }
+
+    /**
+     * Resolve optional Reply-To from tenant_email_addresses.reply_to_email_address.
+     */
+    @Cacheable(cacheNames = "tenantEmailReplyToCache", key = "#tenantId + ':' + #emailType", unless = "#result == null || #result.isEmpty()")
+    public String resolveReplyToEmailByType(String tenantId, TenantEmailType emailType) {
+        if (tenantId == null || tenantId.isBlank()) {
+            return "";
         }
 
-        return "";
+        return selectTenantEmailAddress(tenantId, emailType)
+            .map(TenantEmailAddress::getReplyToEmailAddress)
+            .filter(replyTo -> replyTo != null && !replyTo.isBlank())
+            .orElse("");
+    }
+
+    /**
+     * Reply-To for outbound mail: tenant reply_to when configured, else visitor senderEmail (contact forms).
+     */
+    private String resolveEffectiveReplyTo(String tenantId, TenantEmailType emailType, ContactFormEmailJobRequest request) {
+        String configuredReplyTo = resolveReplyToEmailByType(tenantId, emailType);
+        if (configuredReplyTo != null && !configuredReplyTo.isBlank()) {
+            return configuredReplyTo;
+        }
+        return request.getSenderEmail();
     }
 }
-
-

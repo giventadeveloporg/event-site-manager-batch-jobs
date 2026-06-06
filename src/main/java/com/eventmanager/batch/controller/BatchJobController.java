@@ -127,10 +127,10 @@ public class BatchJobController {
         @Valid @RequestBody ContactFormEmailJobRequest request
     ) {
         try {
-            log.info("Received request to trigger contact form email job - tenantId: {}, fromEmail: {}, toEmail: {}",
+            log.info("Received request to trigger contact form email job - tenantId: {}, senderEmail: {}, emailType: {}",
                 request.getTenantId(),
-                request.getFromEmail(),
-                request.getToEmail()
+                request.getSenderEmail(),
+                request.getEmailType()
             );
 
             ContactFormEmailJobResponse response = contactFormEmailJobService.triggerContactFormEmailJob(request);
