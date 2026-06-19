@@ -115,6 +115,9 @@ public class EventMedia implements Serializable {
     @Column(name = "event_focus_group_id")
     private Long eventFocusGroupId;
 
+    @Column(name = "album_id")
+    private Long albumId;
+
     @Column(name = "performer_id")
     private Long performerId;
 
