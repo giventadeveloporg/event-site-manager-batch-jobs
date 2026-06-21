@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 
 /**
@@ -43,6 +44,15 @@ public class GalleryAlbum implements Serializable {
 
     @Column(name = "album_year")
     private Integer albumYear;
+
+    @Column(name = "event_date_start")
+    private LocalDate eventDateStart;
+
+    @Column(name = "event_date_end")
+    private LocalDate eventDateEnd;
+
+    @Column(name = "event_location", length = 256)
+    private String eventLocation;
 
     @Column(name = "gallery_category_id")
     private Long galleryCategoryId;
