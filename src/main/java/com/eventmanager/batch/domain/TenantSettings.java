@@ -111,6 +111,12 @@ public class TenantSettings implements Serializable {
     @Column(name = "address_line_2", length = 255)
     private String addressLine2;
 
+    @Column(name = "description", length = 1000)
+    private String description;
+
+    @Column(name = "city", length = 255)
+    private String city;
+
     @Column(name = "phone_number", length = 50)
     private String phoneNumber;
 
