@@ -867,6 +867,9 @@ public class EmailContentBuilderService {
         return fullHtml.toString();
     }
 
+    /**
+     * Build HTML body for event competition registration confirmation email.
+     */
     public String buildEventCompetitionRegistrationConfirmationEmailBody(
         String participantName,
         String competitionName,
@@ -918,6 +921,9 @@ public class EmailContentBuilderService {
         return fullHtml.toString();
     }
 
+    /**
+     * Build HTML body for winners-published notification email.
+     */
     public String buildEventCompetitionWinnersPublishedEmailBody(
         String eventTitle,
         String winnersUrl,
@@ -985,6 +991,9 @@ public class EmailContentBuilderService {
         return fullHtml.toString();
     }
 
+    /**
+     * Build HTML body for event competition registration summary report email.
+     */
     public String buildEventCompetitionRegistrationSummaryEmailBody(
         String eventTitle,
         java.util.List<EventCompetitionSummaryRow> summaryRows,
@@ -1049,6 +1058,9 @@ public class EmailContentBuilderService {
         return fullHtml.toString();
     }
 
+    /**
+     * Apply template placeholders for competition emails.
+     */
     public String applyCompetitionTemplatePlaceholders(
         String content,
         String participantName,
