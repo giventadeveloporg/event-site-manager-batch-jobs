@@ -913,6 +913,7 @@ public class EmailContentBuilderService {
         fullHtml.append("<tr><td style='padding: 8px; border-bottom: 1px solid #ddd;'><strong>Status:</strong></td>")
             .append("<td style='padding: 8px; border-bottom: 1px solid #ddd;'><span style='color: #059669; font-weight: bold;'>Confirmed</span></td></tr>");
         fullHtml.append("</table>");
+
         fullHtml.append("<p>We look forward to seeing you at the competition. Good luck!</p>");
         fullHtml.append("</div>");
 
