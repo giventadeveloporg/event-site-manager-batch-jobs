@@ -40,6 +40,18 @@ This rule defines the standard patterns for adding or modifying PostgreSQL table
 
 ## **Shared Sequence Generator Rules (Mandatory)**
 
+- **Sequence increment:** `CREATE SEQUENCE public.sequence_generator` must use **`INCREMENT BY 1`** (not JHipster's default 50). Fresh installs get this from the canonical schema file.
+- **Hibernate alignment:** Every entity using `sequence_generator` must declare **`allocationSize = 1`** on `@SequenceGenerator`. Mismatch causes duplicate primary key errors.
+  ```java
+  @SequenceGenerator(name = "sequenceGenerator", sequenceName = "public.sequence_generator", allocationSize = 1)
+  ```
+- **Legacy databases:** If an environment was created with `INCREMENT BY 50`, run `fix_sequence_generator_increment_by_one.sql` once after deploying backend `allocationSize = 1`.
+- **Dev workflow after seed data:**
+  1. `Latest_Schema_Post__Blob_Claude_12.sql`
+  2. `corrected_event_media_inserts.ordered.sql`
+  3. `sync_sequence_after_inserts.sql` (or schema end-of-file `setval` block / `POST /api/admin/sync-sequence`)
+- **Spring Batch sequences** (`batch_job_seq`, etc.) are separate — use `sync_spring_batch_sequences.sql`, not `sequence_generator` scripts.
+
 - **Never leave a hardcoded shared sequence value** for `public.sequence_generator` when schema evolves (for example `setval(..., 4000, true)` only).
 - Use `GREATEST(...)` with `COALESCE(MAX(id), 0)` for all tables using `DEFAULT nextval('public.sequence_generator'::regclass)`.
 - When introducing a new table that uses `sequence_generator`, add its `MAX(id)` entry immediately in the consolidated sequence block.
@@ -81,5 +93,7 @@ This rule defines the standard patterns for adding or modifying PostgreSQL table
 - [ ] DROP TABLE added at top in reverse dependency order
 - [ ] CREATE TABLE added in dependency order (parents before children)
 - [ ] Table added to `sequence_generator` setval GREATEST list
+- [ ] `CREATE SEQUENCE public.sequence_generator` uses `INCREMENT BY 1`
+- [ ] Java `@SequenceGenerator` includes `allocationSize = 1` for entities using `sequence_generator`
 - [ ] No stale hardcoded `sequence_generator` value left without `MAX(id)` protection for newly-added tables
 - [ ] No ALTER used; only CREATE TABLE for new tables

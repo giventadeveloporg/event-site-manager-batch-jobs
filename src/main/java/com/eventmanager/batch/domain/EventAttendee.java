@@ -17,7 +17,7 @@ public class EventAttendee implements Serializable {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "sequenceGenerator")
-    @SequenceGenerator(name = "sequenceGenerator")
+    @SequenceGenerator(name = "sequenceGenerator", allocationSize = 1)
     @Column(name = "id")
     private Long id;
 

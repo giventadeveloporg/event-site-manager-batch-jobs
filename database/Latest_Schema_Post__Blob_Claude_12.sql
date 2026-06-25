@@ -534,7 +534,7 @@ $$;
 
 CREATE SEQUENCE public.sequence_generator
     START WITH 1050
-    INCREMENT BY 50
+    INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
