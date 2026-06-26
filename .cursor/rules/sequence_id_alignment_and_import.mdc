@@ -1,0 +1,49 @@
+---
+description: sequence_generator and batch log sequence sync — allocationSize=1, pre-sync before jobs, SQL scripts after import
+globs: src/main/java/**/domain/*.java, src/main/java/**/SequenceSynchronization*.java, src/main/java/**/BatchJobExecutionService.java
+alwaysApply: false
+---
+
+# Sequence Alignment (event-site-manager-batch-jobs)
+
+Batch service shares **`public.sequence_generator`** with the main API for domain entities. Spring Batch framework tables use **separate sequences**.
+
+## Entity pattern
+
+```java
+@SequenceGenerator(
+    name = "sequenceGenerator",
+    sequenceName = "public.sequence_generator",
+    allocationSize = 1
+)
+```
+
+All batch domain entities under `src/main/java/com/eventmanager/batch/domain/` (11 files) use **`allocationSize = 1`**.
+
+**Exception:** `BatchJobExecution` uses `GenerationType.IDENTITY` (not `sequence_generator`).
+
+## Runtime components (this repo)
+
+| File | Role |
+|------|------|
+| `batch/service/SequenceSynchronizationService.java` | **Dynamic** sync — all public tables with numeric `id`; plus `synchronizeBatchJobExecutionLogSequence()` |
+| `batch/service/BatchJobExecutionService.java` | Pre-sync both sequences before each job run |
+| `batch/aop/sequence/SequenceSynchronizationAspect.java` | Duplicate PK recovery |
+| `.cursor/rules/duplicate-key-prevention.mdc` | Clear ID on create |
+
+## Post-import SQL (every environment)
+
+Runtime pre-sync does **not** replace SQL sync on a freshly imported database. On each DB that received INSERT dumps, run:
+
+1. `mosc-temp/.../Current_Sqls/sync_sequence_after_inserts.sql`
+2. `mosc-temp/.../Current_Sqls/sync_spring_batch_sequences.sql`
+
+## SQL renumber trim
+
+Optional `renumber_sql_insert_ids.cjs` trims Spring Batch rows in seed files (default: 3 executions + 3 logs). Batch jobs still need `sync_spring_batch_sequences.sql` after import.
+
+## Canonical documentation
+
+- **mosc-temp:** `.cursor/rules/sequence_id_alignment_and_import.mdc`
+- **HTML:** `mosc-temp/documentation/database_export_import/SEQUENCE_ID_ALIGNMENT_GUIDE.html`
+- **Main service:** `event-site-manager-service/.cursor/rules/sequence_id_alignment_and_import.mdc`
