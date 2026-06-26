@@ -1,6 +1,12 @@
 package com.eventmanager.batch.aop.sequence;
 
 import com.eventmanager.batch.service.SequenceSynchronizationService;
+import jakarta.persistence.Table;
+import jakarta.validation.ConstraintViolationException;
+import java.lang.reflect.Method;
+import java.util.Collection;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -11,20 +17,16 @@ import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
-import jakarta.validation.ConstraintViolationException;
-import java.lang.reflect.Method;
-import java.util.Collection;
-
 /**
  * Aspect for handling duplicate key constraint violations by synchronizing
- * the sequence_generator sequence, clearing entity IDs, and retrying the operation.
+ * the affected table's per-table id sequence, clearing entity IDs, and retrying the operation.
  * 
  * This provides secondary protection against duplicate key errors. Primary prevention
  * should be done at the service level by clearing entity IDs before save operations.
  * 
  * Pattern:
  * 1. Catches duplicate key violations
- * 2. Synchronizes sequence_generator to max ID + increment
+ * 2. Synchronizes the table's {table}_id_seq (or batch_job_execution_log_id_seq)
  * 3. Clears entity ID(s) from the save operation arguments
  * 4. Retries the save operation once
  */
@@ -34,6 +36,11 @@ import java.util.Collection;
 @Slf4j
 @Order(1)
 public class SequenceSynchronizationAspect {
+
+    private static final Pattern TABLE_FROM_PKEY = Pattern.compile(
+        "(?:public\\.)?([a-z0-9_]+)_pkey",
+        Pattern.CASE_INSENSITIVE
+    );
 
     private final SequenceSynchronizationService sequenceSynchronizationService;
 
@@ -72,30 +79,32 @@ public class SequenceSynchronizationAspect {
             return joinPoint.proceed();
         } catch (DataIntegrityViolationException | ConstraintViolationException e) {
             if (isDuplicateKeyViolation(e)) {
+                String tableName = resolveTableName(args, e);
                 log.warn(
-                    "Duplicate key violation detected in {}.{}(). " +
-                    "Synchronizing sequence_generator, clearing entity ID(s), and retrying...",
+                    "Duplicate key violation detected in {}.{}() (table={}). " +
+                    "Syncing per-table sequence, clearing entity ID(s), and retrying...",
                     declaringType,
                     methodName,
+                    tableName,
                     e
                 );
 
                 try {
-                    // Step 1: Synchronize sequence to max ID + increment
-                    Long newSequenceValue = sequenceSynchronizationService.synchronizeSequence();
-                    
-                    // Step 1b: Also sync batch_job_execution_log_id_seq if error is for that table
+                    Long newSequenceValue;
                     if (isBatchJobExecutionLogError(e)) {
-                        log.debug("Detected batch_job_execution_log duplicate key error. " +
-                            "Synchronizing batch_job_execution_log_id_seq sequence...");
-                        Long batchLogSequenceValue = sequenceSynchronizationService.synchronizeBatchJobExecutionLogSequence();
-                        if (batchLogSequenceValue != null) {
-                            log.info("batch_job_execution_log_id_seq synchronized to value: {}", batchLogSequenceValue);
-                        }
+                        newSequenceValue = sequenceSynchronizationService.synchronizeBatchJobExecutionLogSequence();
+                    } else if (tableName != null) {
+                        newSequenceValue = sequenceSynchronizationService.synchronizeTableSequence(tableName);
+                    } else {
+                        var results = sequenceSynchronizationService.synchronizeAllTableSequences();
+                        newSequenceValue = results.isEmpty()
+                            ? null
+                            : results.values().stream().max(Long::compareTo).orElse(null);
                     }
-                    
+
                     log.info(
-                        "Sequence synchronized to value: {}. Clearing entity ID(s) and retrying {}.{}() operation...",
+                        "Sequence synchronized (table={}, value={}). Clearing entity ID(s) and retrying {}.{}()...",
+                        tableName,
                         newSequenceValue,
                         declaringType,
                         methodName
@@ -311,6 +320,47 @@ public class SequenceSynchronizationAspect {
             }
             return null;
         }
+    }
+
+    private String resolveTableName(Object[] args, Exception e) {
+        String fromConstraint = extractTableFromConstraintMessage(e);
+        if (fromConstraint != null) {
+            return fromConstraint;
+        }
+        if (args != null && args.length > 0) {
+            Object first = args[0];
+            if (first instanceof Collection<?> collection && !collection.isEmpty()) {
+                first = collection.iterator().next();
+            }
+            if (first != null) {
+                Table table = first.getClass().getAnnotation(Table.class);
+                if (table != null && table.name() != null && !table.name().isBlank()) {
+                    return table.name();
+                }
+            }
+        }
+        return null;
+    }
+
+    private String extractTableFromConstraintMessage(Exception e) {
+        String combined = buildMessageChain(e);
+        Matcher m = TABLE_FROM_PKEY.matcher(combined);
+        if (m.find()) {
+            return m.group(1).toLowerCase();
+        }
+        return null;
+    }
+
+    private String buildMessageChain(Exception e) {
+        StringBuilder sb = new StringBuilder();
+        Throwable t = e;
+        while (t != null) {
+            if (t.getMessage() != null) {
+                sb.append(t.getMessage()).append(' ');
+            }
+            t = t.getCause();
+        }
+        return sb.toString().toLowerCase();
     }
 
     /**

@@ -3,193 +3,205 @@ package com.eventmanager.batch.service;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
-import lombok.RequiredArgsConstructor;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.stream.Collectors;
-
 /**
- * Service for synchronizing the sequence_generator sequence with the maximum IDs
- * across all tables that use it. Dynamically queries tables that have an 'id' column
- * to avoid errors when tables don't have this column.
+ * Synchronizes per-table PostgreSQL id sequences ({table}_id_seq) with MAX(id) after manual imports.
+ * Spring Batch framework sequences are handled separately (sync_spring_batch_sequences.sql).
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SequenceSynchronizationService {
+
+    /** Spring Batch framework + app audit log — not application {table}_id_seq tables. */
+    private static final List<String> EXCLUDED_SEQUENCES = List.of(
+        "batch_job_seq",
+        "batch_job_execution_seq",
+        "batch_step_execution_seq",
+        "batch_job_execution_log_id_seq"
+    );
 
     @PersistenceContext
     private EntityManager entityManager;
 
     /**
-     * Synchronizes the sequence_generator sequence to be at least as high as
-     * the maximum ID across all tables that use it and have a numeric 'id' column.
-     * Only includes tables with numeric id columns (bigint, integer, etc.) to avoid
-     * type mismatch errors with text/varchar id columns.
+     * Sync all application per-table id sequences discovered in pg_sequences.
      *
-     * @return the new sequence value that was set
+     * @return map of sequence name to new last_value
+     */
+    @Transactional
+    public Map<String, Long> synchronizeAllTableSequences() {
+        log.info("Synchronizing per-table id sequences...");
+        Map<String, Long> results = new LinkedHashMap<>();
+
+        @SuppressWarnings("unchecked")
+        List<String> sequences = entityManager
+            .createNativeQuery(
+                """
+                SELECT sequencename
+                FROM pg_sequences
+                WHERE schemaname = 'public'
+                  AND sequencename LIKE '%\\_id_seq' ESCAPE '\\'
+                ORDER BY sequencename
+                """
+            )
+            .getResultList();
+
+        for (String seqName : sequences) {
+            if (EXCLUDED_SEQUENCES.contains(seqName)) {
+                continue;
+            }
+            String tableName = resolveTableName(seqName);
+            if (tableName == null) {
+                log.debug("Skipping sequence {} — no matching public table", seqName);
+                continue;
+            }
+            Long newValue = synchronizeTableSequence(tableName, seqName);
+            if (newValue != null) {
+                results.put(seqName, newValue);
+            }
+        }
+
+        log.info("Synchronized {} per-table sequences", results.size());
+        return results;
+    }
+
+    /**
+     * @deprecated Use {@link #synchronizeAllTableSequences()}. Kept for callers that expect a single Long.
      */
     @Transactional
     public Long synchronizeSequence() {
-        log.info("Synchronizing sequence_generator with maximum IDs across all tables...");
+        Map<String, Long> results = synchronizeAllTableSequences();
+        return results.isEmpty() ? null : results.values().stream().max(Long::compareTo).orElse(null);
+    }
 
-        // First, find all tables in public schema that have a numeric 'id' column
-        // Only include numeric types (bigint, integer, int8, int4, etc.) to avoid type mismatch errors
-        String findTablesSql = """
-            SELECT table_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND column_name = 'id'
-              AND table_name NOT LIKE 'BATCH_%'
-              AND data_type IN ('bigint', 'integer', 'int8', 'int4', 'smallint', 'int2')
-            ORDER BY table_name
-            """;
+    /**
+     * Sync a single table's sequence (used after duplicate-key recovery).
+     */
+    @Transactional
+    public Long synchronizeTableSequence(String tableName) {
+        return synchronizeTableSequence(tableName, tableName + "_id_seq");
+    }
+
+    @Transactional
+    public Long synchronizeTableSequence(String tableName, String sequenceName) {
+        String qualifiedSeq = "public." + sequenceName;
+
+        if (!tableExists(tableName)) {
+            log.warn("Table public.{} not found — skipping sequence sync", tableName);
+            return null;
+        }
+
+        if (!sequenceExists(sequenceName)) {
+            log.warn("Sequence {} not found — skipping", qualifiedSeq);
+            return null;
+        }
+
+        String sql = String.format(
+            "SELECT pg_catalog.setval('%s', GREATEST(COALESCE((SELECT MAX(id) FROM public.%s), 0), 1), true)",
+            qualifiedSeq.replace("'", "''"),
+            tableName.replace("\"", "\"\"")
+        );
 
         try {
-            Query findTablesQuery = entityManager.createNativeQuery(findTablesSql);
-            @SuppressWarnings("unchecked")
-            List<String> tablesWithId = (List<String>) findTablesQuery.getResultList();
-
-            if (tablesWithId.isEmpty()) {
-                log.warn("No tables with numeric 'id' column found. Setting sequence to minimum value 1.");
-                try {
-                    Query setMinQuery = entityManager.createNativeQuery(
-                        "SELECT setval('public.sequence_generator', 1, true)"
-                    );
-                    Object result = setMinQuery.getSingleResult();
-                    return result != null ? ((Number) result).longValue() : 1L;
-                } catch (Exception e) {
-                    if (e.getMessage() != null && e.getMessage().contains("permission denied")) {
-                        log.warn("Permission denied for sequence synchronization. Skipping.");
-                        return null;
-                    }
-                    throw e;
-                }
-            }
-
-            log.debug("Found {} tables with numeric 'id' column: {}", tablesWithId.size(), tablesWithId);
-
-            // Build the GREATEST expression dynamically
-            // Cast MAX(id) to BIGINT to ensure type consistency across all tables
-            // Using CAST() instead of :: to avoid Hibernate parameter placeholder conflicts
-            String maxIdExpressions = tablesWithId.stream()
-                .map(tableName -> String.format("COALESCE((SELECT CAST(MAX(id) AS bigint) FROM public.%s), CAST(0 AS bigint))", tableName))
-                .collect(Collectors.joining(",\n                    "));
-
-            // Try setval() without pg_catalog prefix first (works if user has UPDATE privilege)
-            String sql = String.format("""
-                SELECT setval(
-                    'public.sequence_generator',
-                    GREATEST(
-                        %s,
-                        CAST(1 AS bigint)
-                    ),
-                    true
-                )
-                """, maxIdExpressions);
-
-            log.debug("Executing sequence synchronization query for {} tables", tablesWithId.size());
-
-            Query query = entityManager.createNativeQuery(sql);
-            Object result = query.getSingleResult();
-            Long newSequenceValue = result != null ? ((Number) result).longValue() : null;
-
-            log.info("Sequence synchronized successfully. New sequence value: {} (checked {} tables)",
-                newSequenceValue, tablesWithId.size());
-
-            // Verify the synchronization
-            Query verifyQuery = entityManager.createNativeQuery("SELECT last_value FROM public.sequence_generator");
-            Object verifyResult = verifyQuery.getSingleResult();
-            Long actualSequenceValue = verifyResult != null ? ((Number) verifyResult).longValue() : null;
-
-            log.debug("Verified sequence value: {}", actualSequenceValue);
-
-            return actualSequenceValue;
+            Object result = entityManager.createNativeQuery(sql).getSingleResult();
+            Long newValue = result != null ? ((Number) result).longValue() : null;
+            log.info("Synced {} -> {} (table {})", qualifiedSeq, newValue, tableName);
+            return newValue;
         } catch (Exception e) {
-            // Check if it's a permission error - if so, log warning and return null
-            // The AOP aspect will handle duplicate key violations if they occur
-            String errorMessage = e.getMessage();
-            if (errorMessage != null && errorMessage.contains("permission denied")) {
-                log.warn("Permission denied for sequence synchronization. " +
-                    "Database user lacks UPDATE privilege on sequence_generator. " +
-                    "Pre-synchronization skipped. AOP aspect will handle duplicate key violations if they occur.");
+            if (e.getMessage() != null && e.getMessage().contains("permission denied")) {
+                log.warn("Permission denied syncing sequence {} — skipping", qualifiedSeq);
                 return null;
             }
-            log.error("Failed to synchronize sequence_generator", e);
-            throw new RuntimeException("Failed to synchronize sequence_generator: " + errorMessage, e);
+            log.error("Failed to sync sequence {} for table {}", qualifiedSeq, tableName, e);
+            throw new RuntimeException("Failed to sync sequence " + qualifiedSeq + ": " + e.getMessage(), e);
         }
     }
 
     /**
-     * Synchronizes the batch_job_execution_log_id_seq sequence (created by BIGSERIAL)
-     * to be at least as high as the maximum ID in the batch_job_execution_log table.
-     * This table uses GenerationType.IDENTITY with BIGSERIAL, which creates its own sequence.
-     *
-     * @return the new sequence value that was set, or null if sequence doesn't exist or sync failed
+     * Synchronizes batch_job_execution_log_id_seq (BIGSERIAL / IDENTITY audit table).
+     * Separate from Spring Batch framework sequences and application per-table id_seq sync.
      */
     @Transactional
     public Long synchronizeBatchJobExecutionLogSequence() {
         log.debug("Synchronizing batch_job_execution_log_id_seq sequence...");
 
         try {
-            // Check if sequence exists
-            String checkSequenceSql = """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM pg_sequences
-                    WHERE schemaname = 'public'
-                      AND sequencename = 'batch_job_execution_log_id_seq'
-                )
-                """;
-
-            Query checkSequenceQuery = entityManager.createNativeQuery(checkSequenceSql);
-            Boolean sequenceExists = (Boolean) checkSequenceQuery.getSingleResult();
-
-            if (Boolean.FALSE.equals(sequenceExists)) {
-                log.warn("Sequence batch_job_execution_log_id_seq does not exist. " +
-                    "Table may not use BIGSERIAL or sequence was not created.");
+            if (!sequenceExists("batch_job_execution_log_id_seq")) {
+                log.warn("Sequence batch_job_execution_log_id_seq does not exist — skipping");
                 return null;
             }
 
-            // Get max ID from batch_job_execution_log table
-            String getMaxIdSql = """
-                SELECT COALESCE(MAX(id), 0)
-                FROM public.batch_job_execution_log
-                """;
-
-            Query getMaxIdQuery = entityManager.createNativeQuery(getMaxIdSql);
+            Query getMaxIdQuery = entityManager.createNativeQuery(
+                "SELECT COALESCE(MAX(id), 0) FROM public.batch_job_execution_log"
+            );
             Object maxIdResult = getMaxIdQuery.getSingleResult();
             Long maxId = maxIdResult != null ? ((Number) maxIdResult).longValue() : 0L;
-
-            // Set sequence to max ID + 1 (or 1 if table is empty)
-            Long nextSequenceValue = Math.max(maxId + 1, 1L);
+            long nextSequenceValue = Math.max(maxId + 1, 1L);
 
             String syncSql = String.format(
                 "SELECT setval('public.batch_job_execution_log_id_seq', %d, true)",
                 nextSequenceValue
             );
 
-            Query syncQuery = entityManager.createNativeQuery(syncSql);
-            Object result = syncQuery.getSingleResult();
+            Object result = entityManager.createNativeQuery(syncSql).getSingleResult();
             Long newSequenceValue = result != null ? ((Number) result).longValue() : nextSequenceValue;
 
-            log.info("batch_job_execution_log_id_seq synchronized successfully. " +
-                "Max ID: {}, New sequence value: {}", maxId, newSequenceValue);
-
+            log.info(
+                "batch_job_execution_log_id_seq synchronized. Max ID: {}, New sequence value: {}",
+                maxId,
+                newSequenceValue
+            );
             return newSequenceValue;
         } catch (Exception e) {
-            String errorMessage = e.getMessage();
-            if (errorMessage != null && errorMessage.contains("permission denied")) {
-                log.warn("Permission denied for batch_job_execution_log_id_seq synchronization. " +
-                    "Database user lacks UPDATE privilege on sequence. Skipping.");
+            if (e.getMessage() != null && e.getMessage().contains("permission denied")) {
+                log.warn("Permission denied for batch_job_execution_log_id_seq synchronization — skipping");
                 return null;
             }
             log.error("Failed to synchronize batch_job_execution_log_id_seq", e);
-            // Don't throw - this is a secondary sync, main sequence sync is more important
             return null;
         }
+    }
+
+    private String resolveTableName(String sequenceName) {
+        if (!sequenceName.endsWith("_id_seq")) {
+            return null;
+        }
+        String base = sequenceName.substring(0, sequenceName.length() - "_id_seq".length());
+        if (tableExists(base)) {
+            return base;
+        }
+        return null;
+    }
+
+    private boolean tableExists(String tableName) {
+        Number count = (Number) entityManager
+            .createNativeQuery(
+                """
+                SELECT COUNT(*) FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = :tableName
+                """
+            )
+            .setParameter("tableName", tableName)
+            .getSingleResult();
+        return count != null && count.longValue() > 0;
+    }
+
+    private boolean sequenceExists(String sequenceName) {
+        Number count = (Number) entityManager
+            .createNativeQuery(
+                """
+                SELECT COUNT(*) FROM pg_sequences
+                WHERE schemaname = 'public' AND sequencename = :seqName
+                """
+            )
+            .setParameter("seqName", sequenceName)
+            .getSingleResult();
+        return count != null && count.longValue() > 0;
     }
 }

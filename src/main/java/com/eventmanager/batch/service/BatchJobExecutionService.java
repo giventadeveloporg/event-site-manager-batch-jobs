@@ -28,8 +28,7 @@ public class BatchJobExecutionService {
     public BatchJobExecution createJobExecution(String jobName, String jobType, String tenantId, String triggeredBy, String parametersJson) {
         try {
             log.debug("Pre-synchronizing sequences before batch job execution: {}", jobName);
-            sequenceSynchronizationService.synchronizeSequence();
-            // Also sync the batch_job_execution_log table-specific sequence
+            sequenceSynchronizationService.synchronizeAllTableSequences();
             sequenceSynchronizationService.synchronizeBatchJobExecutionLogSequence();
         } catch (Exception e) {
             log.warn("Failed to pre-synchronize sequences before batch job execution. " +

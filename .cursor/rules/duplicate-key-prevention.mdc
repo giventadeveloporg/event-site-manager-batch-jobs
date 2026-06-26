@@ -195,7 +195,7 @@ The `SequenceSynchronizationAspect` handles cases where sequence gets out of syn
 
 ### Pattern: SQL Sequence Synchronization
 
-**Location:** `src/main/resources/sqls/sync_sequence_after_inserts.sql`
+**Location:** `database/sync_all_table_sequences.sql` (application tables); `database/migrations/sync_spring_batch_sequences.sql` (Spring Batch only)
 
 **When to Use:**
 - After manual INSERT statements
@@ -205,7 +205,7 @@ The `SequenceSynchronizationAspect` handles cases where sequence gets out of syn
 **How to Use:**
 ```bash
 # Run after manual inserts
-psql -d database_name -f src/main/resources/sqls/sync_sequence_after_inserts.sql
+psql -d database_name -f database/sync_all_table_sequences.sql
 ```
 
 ## Best Practices
@@ -297,7 +297,7 @@ void testSaveWithoutId() {
 - **Analysis:** `documentation/fixes/DUPLICATE_KEY_ERROR_ANALYSIS.md`
 - **Summary:** `documentation/fixes/DUPLICATE_KEY_ERROR_SUMMARY.html`
 - **AOP Aspect:** `src/main/java/com/nextjstemplate/aop/sequence/SequenceSynchronizationAspect.java`
-- **SQL Sync Script:** `src/main/resources/sqls/sync_sequence_after_inserts.sql`
+- **SQL Sync Script:** `database/sync_all_table_sequences.sql`
 - **Schema Script:** `src/main/resources/sqls/Latest_Schema_Post__Blob_Claude_12.sql`
 
 ## Notes
