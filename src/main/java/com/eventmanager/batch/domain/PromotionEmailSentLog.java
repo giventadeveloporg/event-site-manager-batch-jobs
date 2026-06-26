@@ -18,8 +18,8 @@ public class PromotionEmailSentLog implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "sequenceGenerator")
-    @SequenceGenerator(name = "sequenceGenerator")
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "promotionEmailSentLogSeq")
+    @SequenceGenerator(name = "promotionEmailSentLogSeq", sequenceName = "public.promotion_email_sent_log_id_seq", allocationSize = 1)
     @Column(name = "id")
     private Long id;
 

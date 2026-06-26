@@ -31,7 +31,7 @@ jobs:
   deploy:
     name: Deploy to Production Environment
     runs-on: ubuntu-latest
-    environment: production
+    environment: prod
 
     steps:
       - name: Checkout code

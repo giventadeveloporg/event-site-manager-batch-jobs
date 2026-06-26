@@ -20,8 +20,8 @@ public class TenantOrganization implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "sequenceGenerator")
-    @SequenceGenerator(name = "sequenceGenerator")
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "tenantOrganizationSeq")
+    @SequenceGenerator(name = "tenantOrganizationSeq", sequenceName = "public.tenant_organization_id_seq", allocationSize = 1)
     @Column(name = "id")
     private Long id;
 

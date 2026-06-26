@@ -1,0 +1,58 @@
+---
+description: Per-table {table}_id_seq alignment, pre-sync before batch jobs, SQL scripts after import
+globs: src/main/java/**/domain/*.java, src/main/java/**/SequenceSynchronization*.java, src/main/java/**/BatchJobExecutionService.java, database/**/*.sql
+alwaysApply: false
+---
+
+# Sequence Alignment (event-site-manager-batch-jobs)
+
+Batch jobs share the same **per-table** PostgreSQL id sequences as the main API (`public.{table_name}_id_seq`). **Spring Batch framework** tables use **separate** sequences — never sync them via application table scripts.
+
+## Entity pattern
+
+```java
+@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "eventMediaSeq")
+@SequenceGenerator(
+    name = "eventMediaSeq",
+    sequenceName = "public.event_media_id_seq",
+    allocationSize = 1
+)
+```
+
+Each insert-capable entity under `com.eventmanager.batch.domain` has a **unique** generator name and matching `sequenceName`.
+
+**Exception:** `BatchJobExecution` (`batch_job_execution_log`) uses `GenerationType.IDENTITY` — not a per-table Hibernate sequence.
+
+## Runtime components (this repo)
+
+| File | Role |
+|------|------|
+| `batch/service/SequenceSynchronizationService.java` | `synchronizeAllTableSequences()` — discovers `*_id_seq` in `pg_sequences`; excludes Spring Batch + `batch_job_execution_log_id_seq` |
+| Same | `synchronizeBatchJobExecutionLogSequence()` — app audit log only |
+| `batch/service/BatchJobExecutionService.java` | Pre-sync both before each job run |
+| `batch/aop/sequence/SequenceSynchronizationAspect.java` | Duplicate PK → sync **that table's** sequence (or batch log sequence) |
+
+## Post-import SQL (every environment)
+
+On each DB that received INSERT dumps:
+
+1. `database/sync_all_table_sequences.sql` — **application** tables only
+2. `database/migrations/sync_spring_batch_sequences.sql` — **Spring Batch** framework tables only (`batch_job_seq`, `batch_job_execution_seq`, `batch_step_execution_seq`)
+
+**Deprecated:** `sync_sequence_after_inserts.sql` (shared `sequence_generator`).
+
+## Spring Batch separation (critical)
+
+| Sequence / table | Sync script |
+|------------------|-------------|
+| `{table}_id_seq` (domain entities) | `sync_all_table_sequences.sql` |
+| `batch_job_seq`, `batch_job_execution_seq`, `batch_step_execution_seq` | `sync_spring_batch_sequences.sql` only |
+| `batch_job_execution_log_id_seq` | Runtime `synchronizeBatchJobExecutionLogSequence()` or included in app sync exclusion list |
+
+Do **not** add Spring Batch sequences to `sync_all_table_sequences.sql` or Hibernate `@SequenceGenerator` on `BATCH_*` tables.
+
+## Canonical documentation
+
+- **mosc-temp:** `.cursor/rules/sequence_id_alignment_and_import.mdc`
+- **Main service:** `event-site-manager-service/.cursor/rules/sequence_id_alignment_and_import.mdc`
+- **Schema:** `database/Latest_Schema_Post__Blob_Claude_12.sql` (synced from mosc-temp canonical)
