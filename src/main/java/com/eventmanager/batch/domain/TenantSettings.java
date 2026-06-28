@@ -165,6 +165,15 @@ public class TenantSettings implements Serializable {
     @Column(name = "default_hero_max_display_count")
     private Integer defaultHeroMaxDisplayCount;
 
+    @Column(name = "enable_google_adsense", nullable = false)
+    private Boolean enableGoogleAdsense = false;
+
+    @Column(name = "google_adsense_publisher_id", length = 32)
+    private String googleAdsensePublisherId;
+
+    @Column(name = "google_adsense_placements_json", columnDefinition = "text")
+    private String googleAdsensePlacementsJson;
+
     @Column(name = "created_at", nullable = false)
     private ZonedDateTime createdAt;
 
