@@ -2,7 +2,8 @@
 -- Sync all application table sequences (per-table id_seq)
 -- ===================================================
 -- Replaces sync_sequence_after_inserts.sql after per-table sequence migration.
--- Spring Batch framework sequences: use sync_spring_batch_sequences.sql (step 7b).
+-- Spring Batch framework sequences: use database/migrations/sync_spring_batch_sequences.sql (not this script).
+-- Join tables (rel_*) and tables without an id column are intentionally omitted.
 -- ===================================================
 
 BEGIN;
@@ -58,6 +59,11 @@ DECLARE
         'executive_committee_team_members',
         'team_groups',
         'team_members',
+        'public_profile',
+        'profile_writing',
+        'profile_achievement',
+        'profile_affiliation',
+        'profile_media_asset',
         'communication_campaign',
         'email_log',
         'whatsapp_log',

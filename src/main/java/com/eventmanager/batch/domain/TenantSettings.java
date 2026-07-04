@@ -174,6 +174,24 @@ public class TenantSettings implements Serializable {
     @Column(name = "google_adsense_placements_json", columnDefinition = "text")
     private String googleAdsensePlacementsJson;
 
+    @Column(name = "show_public_profile_hero_section", nullable = false)
+    private Boolean showPublicProfileHeroSection = false;
+
+    @Column(name = "show_profile_writings_section", nullable = false)
+    private Boolean showProfileWritingsSection = false;
+
+    @Column(name = "show_profile_achievements_section", nullable = false)
+    private Boolean showProfileAchievementsSection = false;
+
+    @Column(name = "show_profile_affiliations_section", nullable = false)
+    private Boolean showProfileAffiliationsSection = false;
+
+    @Column(name = "show_profile_media_downloads_section", nullable = false)
+    private Boolean showProfileMediaDownloadsSection = false;
+
+    @Column(name = "show_profile_contact_section", nullable = false)
+    private Boolean showProfileContactSection = false;
+
     @Column(name = "created_at", nullable = false)
     private ZonedDateTime createdAt;
 

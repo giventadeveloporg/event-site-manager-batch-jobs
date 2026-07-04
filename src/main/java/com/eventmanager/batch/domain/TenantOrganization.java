@@ -73,6 +73,12 @@ public class TenantOrganization implements Serializable {
     @Column(name = "website_url", length = 1024)
     private String websiteUrl;
 
+    @Column(name = "site_type", length = 32, nullable = false)
+    private String siteType = "EVENT_ORG";
+
+    @Column(name = "site_template_version", length = 32)
+    private String siteTemplateVersion;
+
     @Column(name = "subscription_plan", length = 20)
     private String subscriptionPlan;
 

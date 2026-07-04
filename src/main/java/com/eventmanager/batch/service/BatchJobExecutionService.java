@@ -26,13 +26,17 @@ public class BatchJobExecutionService {
      */
     @Transactional
     public BatchJobExecution createJobExecution(String jobName, String jobType, String tenantId, String triggeredBy, String parametersJson) {
+        // Sync only the app audit log sequence — not all application tables and never Spring Batch framework sequences.
+        // Bulk sync on every job was slow, touched join tables (rel_*), and could abort this transaction on SQL errors.
         try {
-            log.debug("Pre-synchronizing sequences before batch job execution: {}", jobName);
-            sequenceSynchronizationService.synchronizeAllTableSequences();
+            log.debug("Pre-synchronizing batch_job_execution_log sequence before job: {}", jobName);
             sequenceSynchronizationService.synchronizeBatchJobExecutionLogSequence();
         } catch (Exception e) {
-            log.warn("Failed to pre-synchronize sequences before batch job execution. " +
-                "Will rely on AOP aspect for recovery: {}", e.getMessage());
+            log.warn(
+                "Failed to pre-synchronize batch_job_execution_log sequence before batch job execution. " +
+                    "Will rely on AOP aspect for recovery: {}",
+                e.getMessage()
+            );
         }
 
         BatchJobExecution execution = new BatchJobExecution();
