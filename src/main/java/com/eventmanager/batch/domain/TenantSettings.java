@@ -165,6 +165,9 @@ public class TenantSettings implements Serializable {
     @Column(name = "default_hero_max_display_count")
     private Integer defaultHeroMaxDisplayCount;
 
+    @Column(name = "display_event_hero_images", nullable = false)
+    private Boolean displayEventHeroImages = true;
+
     @Column(name = "enable_google_adsense", nullable = false)
     private Boolean enableGoogleAdsense = false;
 
