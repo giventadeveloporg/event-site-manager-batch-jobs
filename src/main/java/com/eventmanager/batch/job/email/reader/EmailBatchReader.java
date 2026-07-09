@@ -5,6 +5,7 @@ import com.eventmanager.batch.domain.PromotionEmailTemplate;
 import com.eventmanager.batch.domain.UserProfile;
 import com.eventmanager.batch.dto.EmailRecipient;
 import com.eventmanager.batch.repository.EventAttendeeRepository;
+import com.eventmanager.batch.repository.ProfileAudienceContactRepository;
 import com.eventmanager.batch.repository.PromotionEmailTemplateRepository;
 import com.eventmanager.batch.repository.UserProfileRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class EmailBatchReader implements ItemReader<EmailRecipient> {
     private final PromotionEmailTemplateRepository templateRepository;
     private final EventAttendeeRepository eventAttendeeRepository;
     private final UserProfileRepository userProfileRepository;
+    private final ProfileAudienceContactRepository profileAudienceContactRepository;
 
     @Value("${batch.email.max-emails:10000}")
     private int maxEmails;
@@ -149,8 +151,14 @@ public class EmailBatchReader implements ItemReader<EmailRecipient> {
         } else if ("SUBSCRIBED_MEMBERS".equalsIgnoreCase(effectiveRecipientType)) {
             emails = userProfileRepository.findSubscribedEmailsByTenantId(tenantId);
             log.info("Retrieved {} recipient emails from subscribed members for tenantId: {}", emails.size(), tenantId);
+        } else if ("PROFILE_AUDIENCE".equalsIgnoreCase(effectiveRecipientType)) {
+            emails = profileAudienceContactRepository.findOptedInEmailsByTenantId(tenantId);
+            log.info("Retrieved {} recipient emails from profile audience for tenantId: {}", emails.size(), tenantId);
         } else {
-            log.error("Invalid recipientType: {}. Expected 'EVENT_ATTENDEES' or 'SUBSCRIBED_MEMBERS'", effectiveRecipientType);
+            log.error(
+                "Invalid recipientType: {}. Expected 'EVENT_ATTENDEES', 'SUBSCRIBED_MEMBERS', or 'PROFILE_AUDIENCE'",
+                effectiveRecipientType
+            );
             return List.of();
         }
 
