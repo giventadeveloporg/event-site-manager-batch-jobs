@@ -105,6 +105,18 @@ batch:
     max-subscriptions: ${SUBSCRIPTION_RENEWAL_MAX_SUBSCRIPTIONS:10000}
     days-before-renewal: ${SUBSCRIPTION_RENEWAL_DAYS_BEFORE:7}
 
+  # Official documents — foundation for planned batch jobs (thumbnails, URL refresh, bulk import).
+  # Keep *.enabled=false until each job is fully implemented. Page size mirrors frontend (25).
+  official-documents:
+    page-size: ${OFFICIAL_DOCUMENT_BATCH_PAGE_SIZE:25}
+    thumbnail:
+      enabled: ${OFFICIAL_DOCUMENT_THUMBNAIL_ENABLED:false}
+    url-refresh:
+      enabled: ${OFFICIAL_DOCUMENT_URL_REFRESH_ENABLED:false}
+      expires-within-hours: ${OFFICIAL_DOCUMENT_URL_REFRESH_EXPIRES_WITHIN_HOURS:24}
+    bulk-import:
+      enabled: ${OFFICIAL_DOCUMENT_BULK_IMPORT_ENABLED:false}
+
 # Subscription Renewal Fallback Configuration
 subscription:
   renewal:

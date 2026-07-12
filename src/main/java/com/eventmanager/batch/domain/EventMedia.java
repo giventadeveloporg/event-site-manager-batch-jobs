@@ -11,6 +11,12 @@ import java.time.ZonedDateTime;
  * Entity for event_media.
  * Simplified version for batch job processing.
  * Includes event_focus_group_id for focus group–scoped media (see backend PRD).
+ * Includes official-document fields (category, year, hierarchy, thumbnails, display priority)
+ * so future official-document batch jobs can page over rows without schema drift.
+ * <p>
+ * Official-document TEXT columns ({@code hierarchy_path}) can be large — always use
+ * {@link com.eventmanager.batch.officialdocument.OfficialDocumentPagedReader}
+ * (page size 25) rather than {@code findAll()}.
  */
 @Entity
 @Table(name = "event_media")
@@ -64,11 +70,44 @@ public class EventMedia implements Serializable {
     @Column(name = "is_event_management_official_document")
     private Boolean isEventManagementOfficialDocument;
 
+    /** FK to official_document_category when this row is an official document. */
+    @Column(name = "official_document_category_id")
+    private Long officialDocumentCategoryId;
+
+    /** Calendar year segment for S3 path .../official_document/{slug}/{year}/. */
+    @Column(name = "official_document_year")
+    private Integer officialDocumentYear;
+
+    /**
+     * Canonical hierarchy path for downloads tree rendering
+     * (example: Kalpana 2023\\Kalpana 110 Commission\\file.pdf).
+     * Stored as TEXT in PostgreSQL — keep nullable; never load full-table pages of this column.
+     */
+    @Column(name = "hierarchy_path", columnDefinition = "TEXT")
+    private String hierarchyPath;
+
+    @Column(name = "hierarchy_category_label", columnDefinition = "TEXT")
+    private String hierarchyCategoryLabel;
+
+    /** Lower values appear first in public downloads listing. */
+    @Column(name = "display_priority")
+    private Integer displayPriority;
+
     @Column(name = "pre_signed_url", length = 2048)
     private String preSignedUrl;
 
     @Column(name = "pre_signed_url_expires_at")
     private ZonedDateTime preSignedUrlExpiresAt;
+
+    /** Stable S3/object URL for optional card thumbnail (e.g. PDF preview image). */
+    @Column(name = "thumbnail_url", length = 2048)
+    private String thumbnailUrl;
+
+    @Column(name = "thumbnail_pre_signed_url", length = 2048)
+    private String thumbnailPreSignedUrl;
+
+    @Column(name = "thumbnail_pre_signed_url_expires_at")
+    private ZonedDateTime thumbnailPreSignedUrlExpiresAt;
 
     @Column(name = "alt_text", length = 500)
     private String altText;

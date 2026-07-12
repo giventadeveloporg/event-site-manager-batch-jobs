@@ -92,6 +92,23 @@ public class BatchJobMonitoringService {
         jobs.add(configuredJob("STRIPE_FEES_TAX_UPDATE", "stripe-fees-tax", "Stripe fees/tax update job"));
         jobs.add(configuredJob("MANUAL_PAYMENT_SUMMARY", "manual-payment-summary", "Manual payment summary aggregation"));
 
+        // Official-document planned jobs (disabled by default — scaffold / dry-run only)
+        jobs.add(configuredJob(
+            "OFFICIAL_DOCUMENT_THUMBNAIL",
+            "official-documents.thumbnail",
+            "Official document thumbnail generation (scaffolded; paged reader ready)"
+        ));
+        jobs.add(configuredJob(
+            "OFFICIAL_DOCUMENT_URL_REFRESH",
+            "official-documents.url-refresh",
+            "Official document presigned URL refresh (scaffolded; paged reader ready)"
+        ));
+        jobs.add(configuredJob(
+            "OFFICIAL_DOCUMENT_BULK_IMPORT",
+            "official-documents.bulk-import",
+            "Official document S3 bulk import (scaffolded; paged inventory ready)"
+        ));
+
         jobs.add(onDemandJob("CONTACT_FORM_EMAIL", "On-demand contact form email batch job"));
         jobs.add(onDemandJob("PROMOTION_TEST_EMAIL", "On-demand promotion test email job"));
         jobs.add(onDemandJob("MANUAL_PAYMENT_CONFIRMATION_EMAIL", "On-demand manual payment confirmation email job"));
