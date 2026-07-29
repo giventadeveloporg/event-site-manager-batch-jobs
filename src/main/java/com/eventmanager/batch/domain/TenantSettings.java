@@ -195,6 +195,40 @@ public class TenantSettings implements Serializable {
     @Column(name = "show_profile_contact_section", nullable = false)
     private Boolean showProfileContactSection = false;
 
+    /** Header menu visibility (null = app default: ON for legacy items) */
+    @Column(name = "show_header_home")
+    private Boolean showHeaderHome;
+
+    @Column(name = "show_header_about")
+    private Boolean showHeaderAbout;
+
+    @Column(name = "show_header_events")
+    private Boolean showHeaderEvents;
+
+    @Column(name = "show_header_features")
+    private Boolean showHeaderFeatures;
+
+    @Column(name = "show_header_calendar")
+    private Boolean showHeaderCalendar;
+
+    @Column(name = "show_header_gallery")
+    private Boolean showHeaderGallery;
+
+    @Column(name = "show_header_contact")
+    private Boolean showHeaderContact;
+
+    /** Header menu: News / Perspectives (null = OFF) */
+    @Column(name = "show_header_news")
+    private Boolean showHeaderNews;
+
+    /** Header menu: Downloads (null = OFF) */
+    @Column(name = "show_header_downloads")
+    private Boolean showHeaderDownloads;
+
+    /** Header menu: Links (null = OFF) */
+    @Column(name = "show_header_links")
+    private Boolean showHeaderLinks;
+
     @Column(name = "created_at", nullable = false)
     private ZonedDateTime createdAt;
 
