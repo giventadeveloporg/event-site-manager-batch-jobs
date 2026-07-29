@@ -6456,6 +6456,7 @@ CREATE TABLE public.event_competition_group_member (
     member_role character varying(20) DEFAULT 'MEMBER',
     sort_order integer DEFAULT 0,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
     CONSTRAINT event_competition_group_member_pkey PRIMARY KEY (id),
     CONSTRAINT fk_event_comp_group_member__registration
         FOREIGN KEY (registration_id) REFERENCES public.event_competition_registration(id) ON DELETE CASCADE,

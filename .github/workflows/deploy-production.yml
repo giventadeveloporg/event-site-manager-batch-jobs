@@ -97,20 +97,23 @@ jobs:
           echo "Container names in task definition:"
           cat task-definition.json | jq -r '.containerDefinitions[].name'
 
-      # Sync runtime AWS credentials from GitHub Secrets into the ECS task definition.
-      # GitHub Secrets are used for CI/CD above; this step ensures the running container
-      # receives the same credentials. Removes duplicate Secrets Manager entries for
-      # these keys to avoid stale values overriding the synced environment variables.
-      - name: Sync AWS credentials into ECS task definition
+      # Keep runtime env minimal. Prefer ECS task role for AWS API access —
+      # do NOT inject AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY into the container
+      # (those override the task-role credential chain and can break S3/SES at runtime).
+      # Existing AWS_* keys already present in the live task definition are left unchanged.
+      - name: Keep task definition runtime env minimal
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_S3_BUCKET_NAME: ${{ vars.AWS_S3_BUCKET_NAME }}
           CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
         run: |
+          # Fail fast if container name does not match the downloaded task definition
+          NAMES=$(jq -r '.containerDefinitions[].name' task-definition.json)
+          echo "Container names in task definition: $NAMES"
+          if ! echo "$NAMES" | grep -qx "$CONTAINER_NAME"; then
+            echo "::error::CONTAINER_NAME='$CONTAINER_NAME' does not match any container in the task definition ($NAMES)."
+            exit 1
+          fi
           jq --arg container "$CONTAINER_NAME" \
-             --arg access_key "$AWS_ACCESS_KEY_ID" \
-             --arg secret_key "$AWS_SECRET_ACCESS_KEY" \
              --arg region "${{ env.AWS_S3_REGION }}" \
              --arg bucket "$AWS_S3_BUCKET_NAME" \
              '
@@ -119,30 +122,19 @@ jobs:
                if .name == $container then
                  .environment = (
                    ((.environment // []) | map(select(
-                     .name != "AWS_ACCESS_KEY_ID" and
-                     .name != "AWS_SECRET_ACCESS_KEY" and
                      .name != "AWS_REGION" and
                      .name != "AWS_S3_BUCKET_NAME"
                    ))) +
                    [
-                     {"name": "AWS_ACCESS_KEY_ID", "value": $access_key},
-                     {"name": "AWS_SECRET_ACCESS_KEY", "value": $secret_key},
                      {"name": "AWS_REGION", "value": $region}
                    ] +
                    (if ($bucket | length) > 0 then [{"name": "AWS_S3_BUCKET_NAME", "value": $bucket}] else [] end)
                  )
-                 | .secrets = (
-                   (.secrets // []) | map(select(
-                     .name != "AWS_ACCESS_KEY_ID" and
-                     .name != "AWS_SECRET_ACCESS_KEY"
-                   ))
-                 )
                else .
                end
              ]
-             ' task-definition.json > task-definition-synced.json
-          mv task-definition-synced.json task-definition.json
-          echo "Synced AWS credentials into container '$CONTAINER_NAME' (values are masked in logs)."
+             ' task-definition.json > task-definition-updated.json
+          mv task-definition-updated.json task-definition.json
 
       - name: Fill in the new image ID in the Amazon ECS task definition
         id: task-def
@@ -167,3 +159,28 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }}
           echo "Deployment verified successfully!"
+
+      - name: Dump ECS service events on failure
+        if: failure()
+        run: |
+          echo "=== Recent service events ==="
+          aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].events[0:20].[createdAt,message]' \
+            --output table || true
+          echo "=== Recent STOPPED tasks ==="
+          STOPPED=$(aws ecs list-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service-name "${{ env.ECS_SERVICE }}" \
+            --desired-status STOPPED \
+            --query 'taskArns[0:5]' \
+            --output text)
+          if [ -n "$STOPPED" ] && [ "$STOPPED" != "None" ]; then
+            aws ecs describe-tasks \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --tasks $STOPPED \
+              --query 'tasks[].{arn:taskArn,stopCode:stopCode,stoppedReason:stoppedReason,containers:containers[].{name:name,exitCode:exitCode,reason:reason,health:healthStatus}}' \
+              --output json || true
+          fi
+          echo "=== Tip: CloudWatch /ecs/${{ env.ECS_TASK_DEFINITION }} — look for Schema-validation / Application failed to start ==="
