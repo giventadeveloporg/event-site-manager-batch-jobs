@@ -100,7 +100,15 @@ DECLARE
         'event_competition_registration',
         'event_competition_result',
         'event_competition_content_block',
-        'event_competition_group_member'
+        'event_competition_group_member',
+        'public_profile',
+        'profile_writing',
+        'profile_achievement',
+        'profile_affiliation',
+        'profile_media_asset',
+        'profile_project',
+        'profile_service',
+        'profile_audience_contact'
     ];
 BEGIN
     FOREACH tbl IN ARRAY tables

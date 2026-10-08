@@ -195,6 +195,12 @@ public class TenantSettings implements Serializable {
     @Column(name = "show_profile_contact_section", nullable = false)
     private Boolean showProfileContactSection = false;
 
+    @Column(name = "show_profile_projects_section", nullable = false)
+    private Boolean showProfileProjectsSection = false;
+
+    @Column(name = "show_profile_services_section", nullable = false)
+    private Boolean showProfileServicesSection = false;
+
     /** Header menu visibility (null = app default: ON for legacy items) */
     @Column(name = "show_header_home")
     private Boolean showHeaderHome;
@@ -228,6 +234,22 @@ public class TenantSettings implements Serializable {
     /** Header menu: Links (null = OFF) */
     @Column(name = "show_header_links")
     private Boolean showHeaderLinks;
+
+    /** Header menu: Services (null = OFF) */
+    @Column(name = "show_header_services")
+    private Boolean showHeaderServices;
+
+    /** Header menu: Achievements (null = OFF) */
+    @Column(name = "show_header_achievements")
+    private Boolean showHeaderAchievements;
+
+    /** Header menu: Affiliations (null = OFF) */
+    @Column(name = "show_header_affiliations")
+    private Boolean showHeaderAffiliations;
+
+    /** Header menu: Projects (null = OFF) */
+    @Column(name = "show_header_projects")
+    private Boolean showHeaderProjects;
 
     @Column(name = "created_at", nullable = false)
     private ZonedDateTime createdAt;
