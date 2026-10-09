@@ -201,6 +201,9 @@ public class TenantSettings implements Serializable {
     @Column(name = "show_profile_services_section", nullable = false)
     private Boolean showProfileServicesSection = false;
 
+    @Column(name = "show_profile_family_section", nullable = false)
+    private Boolean showProfileFamilySection = false;
+
     /** Header menu visibility (null = app default: ON for legacy items) */
     @Column(name = "show_header_home")
     private Boolean showHeaderHome;
@@ -250,6 +253,10 @@ public class TenantSettings implements Serializable {
     /** Header menu: Projects (null = OFF) */
     @Column(name = "show_header_projects")
     private Boolean showHeaderProjects;
+
+    /** Header menu: Family (null = OFF) */
+    @Column(name = "show_header_family")
+    private Boolean showHeaderFamily;
 
     @Column(name = "created_at", nullable = false)
     private ZonedDateTime createdAt;
